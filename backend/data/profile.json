@@ -1,0 +1,18 @@
+{
+  "name": "Arav",
+  "city": "Bengaluru",
+  "speaks": "English and Hindi (Hinglish is fine)",
+  "shopkeeper_language": "Kannada",
+  "style": "Minimal and casual. Prefers plain tees, no big logos.",
+  "favourite_colours": ["olive", "beige", "navy", "white"],
+  "avoid_colours": ["neon", "bright pink"],
+  "sizes": { "tshirt": "M", "shoes": "UK 9" },
+  "wardrobe": "Already owns 3 black T-shirts and 2 white ones.",
+  "goals": ["Gym 4 days a week", "Trying to cut down on sugar"],
+  "budget_style": "Careful with money, hates overpaying",
+  "saved_coupons": ["LITTLE10"],
+  "past_purchases": [
+    { "item": "Black cotton T-shirt", "paid": 650, "where": "Commercial Street", "note": "Later saw it online for 399" },
+    { "item": "USB-C cable", "paid": 199, "where": "Online" }
+  ]
+}
