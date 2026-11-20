@@ -10,7 +10,7 @@ import { state, addLog, addCard, updateCard, type Bargain } from './state.js';
 
 const round10 = (n: number) => Math.round(n / 10) * 10;
 
-type Action = 'start' | 'shop_counter' | 'shop_accepts' | 'shop_refuses';
+type Action = 'start' | 'shop_counter' | 'shop_accepts' | 'shop_refuses' | 'stop';
 
 export function bargainStep(args: { action?: Action; shop_price?: number }) {
   const v = state.verdict;
@@ -53,6 +53,13 @@ export function bargainStep(args: { action?: Action; shop_price?: number }) {
   }
 
   const b = state.bargain;
+
+  // The user ended the negotiation themselves.
+  if (action === 'stop') {
+    b.status = 'walked_away';
+    addLog('tool', 'Negotiation stopped by user');
+    return summary(b, 'walk_away', null);
+  }
   const lastOurs = [...b.moves].reverse().find((m) => m.who === 'you')?.price ?? b.opening_offer;
   const ourRounds = b.moves.filter((m) => m.who === 'you').length;
 

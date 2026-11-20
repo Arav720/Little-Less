@@ -51,11 +51,11 @@ function sessionMemory() {
 // than romanised text (Hindi in Devanagari was clear in testing; romanised Kannada was not).
 const PHRASES: Record<string, string> = {
   kannada:
-    '"ನಮಸ್ಕಾರ ಅಣ್ಣ!" / "ಅಣ್ಣ, ಇದು ತುಂಬಾ ಜಾಸ್ತಿ ಆಯ್ತು." / "ಆನ್‌ಲೈನ್‌ನಲ್ಲಿ ಇದು 399 ರೂಪಾಯಿಗೆ ಸಿಗುತ್ತೆ." / "380ಕ್ಕೆ ಕೊಡಿ ಅಣ್ಣ." / "ನಾನು ನಿಮ್ಮ ರೆಗ್ಯುಲರ್ ಕಸ್ಟಮರ್, ಸ್ವಲ್ಪ ಕಮ್ಮಿ ಮಾಡಿ." / "ಈಗಲೇ ಕ್ಯಾಶ್ ಕೊಡ್ತೀನಿ." / "420 ಫೈನಲ್ ಅಣ್ಣ, ಇದಕ್ಕಿಂತ ಜಾಸ್ತಿ ಆಗಲ್ಲ." / "ಸರಿ ಅಣ್ಣ, ಬೇಡ ಬಿಡಿ, ಆನ್‌ಲೈನ್‌ನಲ್ಲಿ ತಗೋತೀನಿ." / "ಸರಿ ಅಣ್ಣ, ಡೀಲ್!"',
+    '"ಅಣ್ಣ, ಈ ರೇಟ್‌ಗೆ ಎರಡು ಬರುತ್ತೆ!" / "ನಾನು ಟೂರಿಸ್ಟ್ ಅಲ್ಲ ಅಣ್ಣ, ಇಲ್ಲೇ ಇರೋನು." / "ನಮಸ್ಕಾರ ಅಣ್ಣ!" / "ಅಣ್ಣ, ಇದು ತುಂಬಾ ಜಾಸ್ತಿ ಆಯ್ತು." / "ಆನ್‌ಲೈನ್‌ನಲ್ಲಿ ಇದು 399 ರೂಪಾಯಿಗೆ ಸಿಗುತ್ತೆ." / "380ಕ್ಕೆ ಕೊಡಿ ಅಣ್ಣ." / "ನಾನು ನಿಮ್ಮ ರೆಗ್ಯುಲರ್ ಕಸ್ಟಮರ್, ಸ್ವಲ್ಪ ಕಮ್ಮಿ ಮಾಡಿ." / "ಈಗಲೇ ಕ್ಯಾಶ್ ಕೊಡ್ತೀನಿ." / "420 ಫೈನಲ್ ಅಣ್ಣ, ಇದಕ್ಕಿಂತ ಜಾಸ್ತಿ ಆಗಲ್ಲ." / "ಸರಿ ಅಣ್ಣ, ಬೇಡ ಬಿಡಿ, ಆನ್‌ಲೈನ್‌ನಲ್ಲಿ ತಗೋತೀನಿ." / "ಸರಿ ಅಣ್ಣ, ಡೀಲ್!"',
   hindi:
-    '"नमस्ते भैया!" / "भैया, ये तो बहुत ज़्यादा है।" / "ऑनलाइन यही 399 का मिल रहा है।" / "380 में दे दो भैया।" / "रेगुलर कस्टमर हूँ, थोड़ा कम करो।" / "अभी कैश देता हूँ।" / "420 फाइनल भैया, इससे ज़्यादा नहीं।" / "रहने दो भैया, ऑनलाइन ले लूँगा।" / "ठीक है भैया, डील पक्की!"',
+    '"भैया, इतने में तो दो आ जाएँगे!" / "भैया, मैं टूरिस्ट नहीं हूँ, यहीं का हूँ।" / "चलो भैया, ना आपका नुकसान ना मेरा।" / "नमस्ते भैया!" / "भैया, ये तो बहुत ज़्यादा है।" / "ऑनलाइन यही 399 का मिल रहा है।" / "380 में दे दो भैया।" / "रेगुलर कस्टमर हूँ, थोड़ा कम करो।" / "अभी कैश देता हूँ।" / "420 फाइनल भैया, इससे ज़्यादा नहीं।" / "रहने दो भैया, ऑनलाइन ले लूँगा।" / "ठीक है भैया, डील पक्की!"',
   tamil:
-    '"வணக்கம் அண்ணா!" / "அண்ணா, இது ரொம்ப ஜாஸ்தி." / "ஆன்லைன்ல இது 399க்கு கிடைக்குது." / "380க்கு குடுங்க அண்ணா." / "நான் ரெகுலர் கஸ்டமர், கொஞ்சம் கம்மி பண்ணுங்க." / "420 ஃபைனல் அண்ணா." / "வேண்டாம் அண்ணா, ஆன்லைன்ல வாங்கிக்கிறேன்." / "சரி அண்ணா, டீல்!"',
+    '"அண்ணா, இந்த விலைக்கு ரெண்டு வாங்கலாம்!" / "நான் டூரிஸ்ட் இல்ல அண்ணா, இங்கேயே இருக்கேன்." / "வணக்கம் அண்ணா!" / "அண்ணா, இது ரொம்ப ஜாஸ்தி." / "ஆன்லைன்ல இது 399க்கு கிடைக்குது." / "380க்கு குடுங்க அண்ணா." / "நான் ரெகுலர் கஸ்டமர், கொஞ்சம் கம்மி பண்ணுங்க." / "420 ஃபைனல் அண்ணா." / "வேண்டாம் அண்ணா, ஆன்லைன்ல வாங்கிக்கிறேன்." / "சரி அண்ணா, டீல்!"',
 };
 const phraseBank = (lang: string) => PHRASES[lang.toLowerCase()] ?? PHRASES.hindi;
 
@@ -81,14 +81,17 @@ HOW YOU TALK
 - Greetings or "are you listening?" → answer warmly that you are listening and ask what they are shopping for. Only if a message is clearly a random fragment of someone else's conversation (e.g. "then in recent weeks I get"), reply with one short line: "I think that was someone nearby. What are you looking at?" Always give exactly ONE reply, never several.
 
 THE FLOW
-1. When the user shows something or mentions a shopkeeper's price: call inspect_product ONCE (pass description and asked_price if they said them). It looks at the camera, checks prices, judges fit, and already shows the verdict card on screen.
-2. Speak the verdict briefly from its result: fair or not, suits them or not (use fit_note), what to do. Never comment on the user's body, skin or looks. For food/health items, compare nutrition with their goals and add "not medical advice" if you give a health opinion.
+There are two modes. You start in SUGGEST mode; NEGOTIATE mode begins only when the user asks you to bargain (or taps Negotiate).
+1. SUGGEST: when the user shows something or names an item: call inspect_product ONCE (pass description and asked_price if they said them). It checks prices, judges fit, and shows the verdict card.
+2. Then give a short, friendly buying opinion like a smart friend: the decision (buy / skip / bargain first), the main reason (fit_note, or "you already have…" from the wardrobe), the size tip if any, and a suggestion if there is one. Follow next_step: if no asked price yet, ask "How much is he asking?". If it's overpriced, say you can negotiate for them. Never comment on the user's body, skin or looks. For food/health items add "not medical advice" if you give a health opinion.
 3. If SESSION MEMORY already has current_item, do NOT call inspect_product again for it (not for negotiating, not for ordering). Only call it again when the user shows or names a different item, or gives a new asked price.
 4. BARGAINING (the star of the show; make it sound like a real, charming Indian market haggle):
    - If overpriced and negotiable, tell the user the counter offer and ask "Want me to talk to him?"
    - When they say yes / "you talk to him" / "negotiate": call bargain_step(action "start"). When they relay his reply ("he says 500", "he's not agreeing", "okay he agreed"), call bargain_step with shop_counter + shop_price, shop_refuses or shop_accepts.
    - Use ONLY the numbers bargain_step returns (our_offer). Never invent an offer, never go above walk_away_price.
-   - Then speak DIRECTLY to the shopkeeper in ${String(profile.shopkeeper_language ?? 'Hindi')}, in its own script, following how_to_say_it. 1 or 2 short, warm, confident lines, like a regular local customer. Respectful, a little playful, never rude. No English translation, no brackets.
+   - Then speak DIRECTLY to the shopkeeper in ${String(profile.shopkeeper_language ?? 'Hindi')}, in its own script, following how_to_say_it. 1 or 2 short lines.
+   - YOUR VIBE WITH THE SHOPKEEPER: calm, confident and cool, like a sharp local who has bargained here a hundred times. Relaxed, a little cheeky, with dry wit ("for this price I could get two!", "bhaiya, I'm a regular, not a tourist"), never loud, never rude, never begging. Keep it real and natural, the way people actually haggle in Indian markets.
+   - When the user says "stop negotiating" or "leave it": call bargain_step with action "stop".
    - While negotiating (open / counter / final_offer), the WHOLE reply is spoken to the shopkeeper: do not add any English question or comment for the user. Do not greet him again after the first line.
    - Mix tactics across rounds instead of repeating yourself: friendly greeting, "too much", online price, regular customer, buying today/paying cash, final offer, polite walk-away.
    - Phrase ideas (adapt the numbers): ${phraseBank(String(profile.shopkeeper_language ?? "Hindi"))}
@@ -193,7 +196,10 @@ function userLanguage(text: string): 'Hindi' | 'Kannada' | 'Tamil' | 'English' {
   return 'English';
 }
 
-type ThinkResult = { text: string; toShopkeeper: boolean };
+type ThinkResult = { text: string; toShopkeeper: boolean; shopLine?: string; userLine?: string };
+
+const INDIC = /[ऀ-ॿ஀-௿ఀ-౿ಀ-೿]/;
+const NON_DEVANAGARI_INDIC = /[஀-௿ఀ-౿ಀ-೿]/;
 
 /** Runs the LLM with tools until it produces the final spoken reply. */
 /** Detects "shopkeeper speaks Hindi" / "उनसे हिंदी में बात करो" style requests. */
@@ -233,6 +239,7 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
   let saidFiller = false;
   const forcePriceCheck = isNewPriceQuote(lastUser);
   let emptyRetries = 0;
+  let wrongLangRetries = 0;
   let bargainMove: string | null = null;
   let bargainOffer: number | null = null;
   // Each tool may run at most once per turn (stops models looping on the same call),
@@ -244,17 +251,53 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
   // Tools are only OFFERED when the user's words call for them. Weaker models otherwise
   // re-check prices every turn, start bargaining unasked, or add things to the bag.
   const t = lastUser.toLowerCase();
-  const allowed = new Set<string>(['view_cart', 'track_order', 'start_return', 'apply_coupon']);
+  const allowed = new Set<string>(['view_cart', 'apply_coupon']);
+  if (/order|deliver|track|parcel|package|return|refund|replace|damaged|broken|wrong size|kab aayega|कब आएगा|ऑर्डर/.test(t)) {
+    allowed.add('track_order');
+    allowed.add('start_return');
+  }
   if (/kannada|hindi|tamil|telugu|english|language|bhasha|speaks?|ಕನ್ನಡ|हिंदी|हिन्दी|தமிழ்/i.test(t)) allowed.add('set_shopkeeper_language');
   if (forcePriceCheck || !state.verdict || /\b(check|scan|look|see|this|these|that|another|new|what about|how about|price of)\b|dekho|ye\b/.test(t)) {
     allowed.add('inspect_product');
   }
-  if (state.bargain || /talk to (him|her|them|the)|negotiate|bargain|haggle|you (tell|ask|speak)|tell him|ask him|baat karo|bolo|says|said|agree|refus|not reducing|won'?t|last price|final|बात कर|मोलभाव|बोल रह|कह रह|कम नहीं|मान गय|नहीं मान|फाइनल|ಮಾತಾಡ|ಹೇಳ್ತಿದ್ದಾರೆ/.test(t)) {
-    allowed.add('bargain_step');
-  }
+  // Bargaining only when the user asks for it, or while a negotiation for the CURRENT item is live.
+  const asksToBargain = /talk to (him|her|them|the)|negotiate|bargain|haggle|you (tell|ask|speak)|tell him|ask him|baat karo|bolo|बात कर|मोलभाव|ಮಾತಾಡ/.test(t);
+  const relaysShop = /says|said|agree|refus|not reducing|won'?t|last price|final|बोल रह|कह रह|कम नहीं|मान गय|नहीं मान|फाइनल|ಹೇಳ್ತಿದ್ದಾರೆ|stop|leave it|forget it|chhodo|रहने दो|छोड़ो/.test(t);
+  const liveBargain =
+    state.bargain && state.verdict && state.bargain.item === state.verdict.item && ['negotiating', 'final_offer'].includes(state.bargain.status);
+  if (asksToBargain || (liveBargain && relaysShop)) allowed.add('bargain_step');
   if (/order|buy|online|cart|bag|add|purchase|checkout|check out|book|yes|yeah|haan|sure|ok|okay|go ahead|confirm|place/.test(t)) {
     allowed.add('add_to_cart');
     allowed.add('checkout');
+  }
+
+  // During a live negotiation, clear updates ("he says 500", "he agreed", "he refused", "stop")
+  // are applied by CODE right away. The AI then only has to say the line, not decide the move.
+  if (liveBargain) {
+    const said = t.match(/(?:says|said|asking|wants|bol rah[ae]|कह रह[ेा]|बोल रह[ेा])\D{0,12}(\d[\d,]*)/);
+    const action: Record<string, unknown> | null = /\b(stop|leave it|forget it|chhodo)\b|रहने दो|छोड़ो/.test(t)
+      ? { action: 'stop' }
+      : /\b(agreed|agrees|ok(ay)? (he|done)|deal)\b|मान गय/.test(t)
+        ? { action: 'shop_accepts' }
+        : said
+          ? { action: 'shop_counter', shop_price: Number(said[1].replace(/,/g, '')) }
+          : /refus|not reducing|won'?t|nahi maan|नहीं मान|कम नहीं/.test(t)
+            ? { action: 'shop_refuses' }
+            : null;
+    if (action) {
+      const id = `auto-bargain-${Date.now()}`;
+      const output = await runTool('bargain_step', JSON.stringify(action));
+      messages.push({ role: 'assistant', content: '', tool_calls: [{ id, type: 'function', function: { name: 'bargain_step', arguments: JSON.stringify(action) } }] });
+      messages.push({ role: 'tool', tool_call_id: id, content: output });
+      used.add('bargain_step');
+      try {
+        const out = JSON.parse(output);
+        bargainMove = out.move ?? null;
+        bargainOffer = typeof out.our_offer === 'number' ? out.our_offer : null;
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   for (let step = 0; step < 5; step++) {
@@ -293,10 +336,34 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
         // Pure negotiation lines (open / counter / final offer) are spoken to the shopkeeper.
         const toShopkeeper = bargainMove === 'open' || bargainMove === 'counter' || bargainMove === 'final_offer';
         // A negotiation line MUST contain our offer; if the AI forgot it, add it in the shopkeeper's language.
-        if (toShopkeeper && bargainOffer && !text.replace(/[,s]/g, '').includes(String(bargainOffer))) {
-          return { text: `${text} ${offerLine(String(loadProfile().shopkeeper_language ?? "Hindi"), bargainOffer, bargainMove === 'final_offer')}`, toShopkeeper };
+        if (toShopkeeper && bargainOffer && !text.replace(/[,\s]/g, '').includes(String(bargainOffer))) {
+          return { text: `${text} ${offerLine(String(loadProfile().shopkeeper_language ?? 'Hindi'), bargainOffer, bargainMove === 'final_offer')}`, toShopkeeper };
         }
-        return { text, toShopkeeper };
+        if (toShopkeeper) return { text, toShopkeeper };
+
+        // Talking to the USER: sentences in a script the user didn't speak are lines meant for the
+        // shopkeeper. On a deal / walk-away they become their own "to the shopkeeper" bubble;
+        // otherwise they don't belong in the reply at all.
+        const sentences = text.match(/[^.!?।]+[.!?।]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [text];
+        const foreign = (s: string) => (lang === 'Hindi' ? NON_DEVANAGARI_INDIC.test(s) : INDIC.test(s));
+        const shopPart = sentences.filter(foreign).join(' ');
+        const userPart = sentences.filter((s) => !foreign(s)).join(' ');
+        if (shopPart && (bargainMove === 'accept' || bargainMove === 'deal' || bargainMove === 'walk_away')) {
+          return { text, toShopkeeper: false, shopLine: shopPart, userLine: userPart };
+        }
+        if (shopPart && !userPart) {
+          if (wrongLangRetries++ < 1) {
+            messages.push({ role: 'system', content: `Reply to the user in ${lang} only.` });
+            continue;
+          }
+          return { text: lang === 'English' ? 'Sorry, could you say that again?' : text, toShopkeeper: false };
+        }
+        let reply = userPart || text;
+        // Suggest mode: if we still don't know the shop's price, always ask for it.
+        if (used.has('inspect_product') && state.verdict?.asked_price == null && !reply.includes('?') && lang === 'English') {
+          reply += ' How much is he asking for it?';
+        }
+        return { text: reply, toShopkeeper: false };
       }
       if (emptyRetries++ < 1) continue;
       return { text: 'Sorry, can you say that once more?', toShopkeeper: false };
@@ -374,7 +441,7 @@ function cartTotalNow() {
 async function converse(text: string, via: 'voice' | 'text', onFiller?: (t: string) => void) {
   // Agora sometimes re-sends the same sentence (even while we are still answering it).
   // Answer it once: duplicates get the same reply instead of a new one.
-  const norm = (x: string) => x.toLowerCase().replace(/[^p{L}p{N}]+/gu, ' ').trim();
+  const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   const lt = state.lastTurn;
   if (norm(text) && norm(text) === norm(lt.text) && Date.now() - lt.at < 20_000) return lt.promise ?? lt.reply;
   const turn = { text, at: Date.now(), reply: '', promise: null as Promise<string> | null };
@@ -390,11 +457,15 @@ async function answer(text: string, via: 'voice' | 'text', onFiller?: (t: string
   state.lastUserText = text;
   state.history.push({ role: 'user', content: text });
   try {
-    const { text: reply, toShopkeeper } = await think(state.history.slice(-16), (filler) => {
+    const { text: reply, toShopkeeper, shopLine, userLine } = await think(state.history.slice(-16), (filler) => {
       addAgent(filler);
       onFiller?.(filler);
     });
-    addAgent(reply, toShopkeeper ? 'shop' : 'agent');
+    if (shopLine) {
+      // Deal / walk-away: show the line to the shopkeeper and the line to the user as two bubbles.
+      addAgent(shopLine, 'shop');
+      if (userLine) addAgent(userLine, 'agent');
+    } else addAgent(reply, toShopkeeper ? 'shop' : 'agent');
     state.history.push({ role: 'assistant', content: reply });
     if (state.history.length > 40) state.history.splice(0, state.history.length - 40);
     return reply;

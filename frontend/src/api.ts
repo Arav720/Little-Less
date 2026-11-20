@@ -14,6 +14,9 @@ export type Verdict = {
   quality_note: string;
   recommendation: string;
   likely_copy?: boolean;
+  size_tip?: string | null;
+  suggestion?: string | null;
+  decision?: { label: string; tone: 'good' | 'warn' | 'bad' | 'neutral' };
   price_source?: 'catalog' | 'web' | 'none';
   sources?: { source: string; price: number; link: string }[];
   at: number;
@@ -78,6 +81,8 @@ export type Profile = {
     already_owns?: string;
   };
   health_goals?: string[];
+  wardrobe?: { item: string; colour: string; count: number }[];
+  demo?: boolean;
   tech?: string;
   budget_style?: string;
   saved_coupons?: string[];

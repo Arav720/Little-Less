@@ -44,7 +44,11 @@ function isRelevant(title: string, query: string) {
   return numbersOk && hits / words.length >= 0.5;
 }
 
-export async function searchWebPrices(query: string): Promise<WebPrices | null> {
+/**
+ * branded=false (e.g. "black T-shirt"): results mix ₹300 basics with ₹7,000 designer pieces,
+ * so the "typical" price is taken from the lower-middle of the listings, not the median.
+ */
+export async function searchWebPrices(query: string, branded = true): Promise<WebPrices | null> {
   if (!config.serperKey || !query.trim()) return null;
   const started = Date.now();
   try {
@@ -70,9 +74,11 @@ export async function searchWebPrices(query: string): Promise<WebPrices | null> 
     const prices = offers.map((o) => o.price).sort((a, b) => a - b);
     const trim = Math.floor(prices.length * 0.2);
     const core = prices.length >= 5 ? prices.slice(trim, prices.length - trim) : prices;
+    const typical = branded ? 0.5 : 0.3;
+    const median = core[Math.floor((core.length - 1) * typical)];
     const low = core[0];
-    const high = core[core.length - 1];
-    const median = core[Math.floor(core.length / 2)];
+    // For generic items, ignore the expensive tail when showing the range.
+    const high = branded ? core[core.length - 1] : Math.min(core[core.length - 1], median * 2);
 
     console.log(`[web] "${query}" ${offers.length} offers in ${Date.now() - started}ms`);
     return {

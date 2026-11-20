@@ -29,21 +29,30 @@ export function loadCatalog(): Catalog {
 }
 
 // Each user (browser session) has their own profile, saved to data/profiles/<session>.json
-// so it survives server restarts. New users start from a neutral default.
+// so it survives server restarts. New users start from the demo profile in data/profile.json
+// (so personalised advice works immediately in a demo); anyone can edit it to their own.
 const profilesDir = path.join(dataDir, 'profiles');
 mkdirSync(profilesDir, { recursive: true });
 
-const DEFAULT_PROFILE: Record<string, unknown> = {
+const BASE_PROFILE: Record<string, unknown> = {
   name: '',
   city: 'Bengaluru',
   speaks: 'English',
   shopkeeper_language: 'Kannada',
   clothing: { style: '', favourite_colours: [], avoid_colours: [], sizes: {}, already_owns: '' },
+  wardrobe: [],
   health_goals: [],
   budget_style: 'Balanced: Good value for money',
   saved_coupons: ['LITTLE10'],
   onboarded: false,
 };
+const DEFAULT_PROFILE: Record<string, unknown> = (() => {
+  try {
+    return { ...BASE_PROFILE, ...JSON.parse(readFileSync(file('profile.json'), 'utf8')) };
+  } catch {
+    return BASE_PROFILE;
+  }
+})();
 
 export function loadProfile(): Record<string, unknown> {
   const s = current();
@@ -55,7 +64,7 @@ export function loadProfile(): Record<string, unknown> {
 
 export function saveProfile(profile: Record<string, unknown>) {
   const s = current();
-  s.profile = { ...DEFAULT_PROFILE, ...profile };
+  s.profile = { ...BASE_PROFILE, ...profile, demo: false };
   if (s.id !== 'default') writeFileSync(path.join(profilesDir, `${s.id}.json`), JSON.stringify(s.profile, null, 2));
 }
 

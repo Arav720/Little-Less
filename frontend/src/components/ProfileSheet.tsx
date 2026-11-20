@@ -50,6 +50,68 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+type WardrobeItem = { item: string; colour: string; count: number };
+const ITEMS = ['T-shirt', 'Shirt', 'Jeans', 'Trousers', 'Kurta', 'Jacket', 'Sneakers', 'Earphones', 'Watch', 'Bag'];
+
+/** Small editor: "3× black T-shirt" chips plus an add row. */
+function Wardrobe({ items, onChange }: { items: WardrobeItem[]; onChange: (w: WardrobeItem[]) => void }) {
+  const [item, setItem] = useState(ITEMS[0]);
+  const [colour, setColour] = useState('black');
+  const [count, setCount] = useState(1);
+  const add = () => {
+    const i = items.findIndex((w) => w.item === item && w.colour === colour);
+    if (i >= 0) onChange(items.map((w, j) => (j === i ? { ...w, count: w.count + count } : w)));
+    else onChange([...items, { item, colour, count }]);
+  };
+  const select = 'rounded-lg border border-line bg-card px-2 py-1.5 text-sm outline-none focus:border-ink';
+  return (
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap gap-1.5">
+        {items.length === 0 && <p className="text-sm text-muted">Nothing added yet.</p>}
+        {items.map((w, i) => (
+          <span key={`${w.item}-${w.colour}`} className="flex items-center gap-1 rounded-full border border-line bg-card py-1 pl-3 pr-1 text-sm">
+            {w.count}× <span className="capitalize">{w.colour}</span> {w.item}
+            <button
+              type="button"
+              onClick={() => onChange(items.filter((_, j) => j !== i))}
+              className="grid h-6 w-6 place-items-center rounded-full text-muted hover:bg-paper hover:text-ink"
+              aria-label={`Remove ${w.colour} ${w.item}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={count} onChange={(e) => setCount(Number(e.target.value))} className={select} aria-label="How many">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <option key={n} value={n}>
+              {n}×
+            </option>
+          ))}
+        </select>
+        <select value={colour} onChange={(e) => setColour(e.target.value)} className={select} aria-label="Colour">
+          {COLOURS.map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+          <option value="blue">blue</option>
+          <option value="light blue">light blue</option>
+        </select>
+        <select value={item} onChange={(e) => setItem(e.target.value)} className={select} aria-label="Item">
+          {ITEMS.map((n) => (
+            <option key={n}>{n}</option>
+          ))}
+        </select>
+        <button type="button" onClick={add} className="rounded-lg bg-ink px-3 py-1.5 text-sm font-semibold text-paper">
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
 export function ProfileSheet({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: (p: Profile) => void }) {
@@ -178,15 +240,9 @@ export function ProfileSheet({ open, onClose, onSaved }: { open: boolean; onClos
           </div>
         </Field>
 
-        <label className="block space-y-1">
-          <span className="font-semibold">Clothes you already own a lot of</span>
-          <input
-            value={clothing.already_owns ?? ''}
-            onChange={(e) => setClothing({ already_owns: e.target.value })}
-            placeholder="e.g. black T-shirts, blue jeans"
-            className="w-full rounded-xl border border-line bg-card px-3 py-2 outline-none focus:border-ink"
-          />
-        </label>
+        <Field label="What you already own" hint="So Little Less can say “you already have 3 black tees, try olive”.">
+          <Wardrobe items={p.wardrobe ?? []} onChange={(wardrobe) => set({ wardrobe })} />
+        </Field>
 
         <Field label="Health goals" hint="Used only for food and health products.">
           <div className="flex flex-wrap gap-2">

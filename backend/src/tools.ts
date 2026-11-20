@@ -31,7 +31,7 @@ export const toolDefinitions: Tool[] = [
     'bargain_step',
     'The bargaining engine: returns the exact price to offer next (never guess numbers yourself). Call with action "start" when the user asks you to negotiate/talk to the shopkeeper; "shop_counter" with shop_price when the user relays the shopkeeper\'s new price ("he says 500"); "shop_refuses" if he won\'t move; "shop_accepts" if he agrees.',
     {
-      action: { type: 'string', enum: ['start', 'shop_counter', 'shop_refuses', 'shop_accepts'] },
+      action: { type: 'string', enum: ['start', 'shop_counter', 'shop_refuses', 'shop_accepts', 'stop'] },
       shop_price: { type: 'number', description: "The shopkeeper's latest price in rupees, if known" },
     },
     ['action'],
@@ -75,11 +75,12 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
   inspect_product: (args: { description?: string; asked_price?: number }) => inspectProduct(args),
   set_shopkeeper_language: ({ language }: { language: string }) => {
     const p = loadProfile();
+    if (p.shopkeeper_language === language) return { ok: true, shopkeeper_language: language };
     saveProfile({ ...p, shopkeeper_language: language });
     addStatus(`Talking to the shopkeeper in ${language} now`);
     return { ok: true, shopkeeper_language: language };
   },
-  bargain_step: (args: { action?: 'start' | 'shop_counter' | 'shop_refuses' | 'shop_accepts'; shop_price?: number }) => bargainStep(args),
+  bargain_step: (args: { action?: 'start' | 'shop_counter' | 'shop_refuses' | 'shop_accepts' | 'stop'; shop_price?: number }) => bargainStep(args),
 
   add_to_cart: ({ product_id, source = 'online', price, qty }: { product_id?: string; source?: 'online' | 'shop'; price?: number; qty?: number }) => {
     // The model often forgets/mangles ids between turns, so fall back to the item just inspected.

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { FeedEntry } from '../api';
 import { MicIcon, SparkIcon, StoreIcon } from '../icons';
-import { VerdictCard } from './VerdictCard';
+import { VerdictCard, type VerdictActions } from './VerdictCard';
 import { BargainCard } from './BargainCard';
 import { OrderCard } from './OrderCard';
 
@@ -17,10 +17,14 @@ type Props = {
   userName?: string;
   needsProfile: boolean;
   onSuggest: (text: string) => void;
+  negotiating: boolean;
+  demoProfile?: boolean;
   onOpenProfile: () => void;
 };
 
-export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onSuggest, onOpenProfile }: Props) {
+export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onSuggest, onOpenProfile, negotiating, demoProfile }: Props) {
+  // Only the newest price card shows action buttons.
+  const latestVerdictId = [...feed].reverse().find((e) => e.card?.type === 'verdict')?.id;
   const endRef = useRef<HTMLDivElement>(null);
   const last = feed.at(-1);
 
@@ -53,8 +57,8 @@ export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onS
               <SparkIcon size={20} />
             </span>
             <span className="min-w-0">
-              <span className="block font-semibold">Set up your shopping profile</span>
-              <span className="block text-sm text-muted">Your style, sizes and goals, so advice fits you. Takes 30 sec.</span>
+              <span className="block font-semibold">{demoProfile ? 'Using a demo profile (Arav)' : 'Set up your shopping profile'}</span>
+              <span className="block text-sm text-muted">{demoProfile ? 'Make it yours: style, sizes, what you own, goals.' : 'Your style, sizes and goals, so advice fits you. Takes 30 sec.'}</span>
             </span>
           </button>
         )}
@@ -77,7 +81,13 @@ export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onS
   return (
     <div className="flex flex-col gap-2.5 px-4 py-4 sm:px-6">
       {feed.map((e, i) => (
-        <Entry key={e.id} e={e} prev={feed[i - 1]} shopLanguage={shopLanguage} />
+        <Entry
+          key={e.id}
+          e={e}
+          prev={feed[i - 1]}
+          shopLanguage={shopLanguage}
+          actions={e.id === latestVerdictId ? { onSend: onSuggest, negotiating } : undefined}
+        />
       ))}
       {thinking && (
         <div className="flex items-center gap-1.5 self-start rounded-2xl rounded-bl-md bg-card px-4 py-3" aria-label="Little Less is thinking">
@@ -91,7 +101,7 @@ export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onS
   );
 }
 
-function Entry({ e, prev, shopLanguage }: { e: FeedEntry; prev?: FeedEntry; shopLanguage: string }) {
+function Entry({ e, prev, shopLanguage, actions }: { e: FeedEntry; prev?: FeedEntry; shopLanguage: string; actions?: VerdictActions }) {
   switch (e.kind) {
     case 'user':
       return (
@@ -133,7 +143,7 @@ function Entry({ e, prev, shopLanguage }: { e: FeedEntry; prev?: FeedEntry; shop
       if (!e.card) return null;
       return (
         <div className="w-full max-w-md self-start">
-          {e.card.type === 'verdict' && <VerdictCard v={e.card.data} />}
+          {e.card.type === 'verdict' && <VerdictCard v={e.card.data} actions={actions} />}
           {e.card.type === 'bargain' && <BargainCard b={e.card.data} />}
           {e.card.type === 'order' && <OrderCard o={e.card.data} />}
         </div>

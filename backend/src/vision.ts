@@ -2,7 +2,7 @@
 // + price check and verdict maths (plain code, instant).
 // Doing this in one tool instead of 3 separate LLM steps saves several seconds per reply.
 import { fastCompletion } from './llm.js';
-import { findProduct, loadProfile, registerWebProduct, type Product } from './data.js';
+import { findProduct, getProduct, loadProfile, registerWebProduct, type Product } from './data.js';
 import { searchWebPrices, webSearchEnabled, type WebPrices } from './webprice.js';
 import { state, addStatus, addCard, type Scan, type Verdict } from './state.js';
 
@@ -16,12 +16,14 @@ ${description ? `IMPORTANT: if the shopper's words name a product (e.g. "tofu bl
 Shopper profile: ${JSON.stringify(loadProfile())}
 
 How to judge fit, by category (use ONLY the parts of the profile that matter for this kind of item; ignore the rest):
-- clothing / accessories: their style, favourite and avoided colours, what they already own (avoid duplicates).
+- clothing / accessories: their style, favourite and avoided colours, and their "wardrobe" list.
+  If they already own 2 or more of the same item in the same colour, say so and suggest one of their favourite colours they don't own yet (e.g. "You already have 3 black tees. Olive or navy would add variety.").
+  Give a size tip from their sizes (e.g. "Take L, your usual size.").
 - food / health: their health goals only (e.g. protein, sugar). Never mention clothing or style.
-- electronics / home / other: usefulness for their lifestyle and budget. Never mention clothing or style.
-If the profile says nothing relevant for this category, use "ok_fit" and a neutral note.
+- electronics / home / other: do they already own one (wardrobe list)? Is it useful for their lifestyle and budget? Never mention clothing or style.
+If the profile says nothing relevant, judge with plain common sense (quality, usefulness, value) and use "ok_fit".
 Never comment on body, skin or looks.
-Write fit_note addressed to the shopper as "you" (never "he", "his" or "the user"), max 15 words, e.g. "High protein, good for your gym goal."
+Write every note to the shopper as "you" (never "he", "his" or "the user"). Keep each note under 18 words.
 
 Reply with ONLY a JSON object, no markdown:
 {"item": short name e.g. "olive cotton T-shirt",
@@ -33,11 +35,31 @@ Reply with ONLY a JSON object, no markdown:
  "authenticity_flags": signs of a copy/fake, or null,
  "search_query": 3-6 words to search a catalog,
  "fit_verdict": "great_fit"|"ok_fit"|"poor_fit"|"unknown",
- "fit_note": one short line why, referring to their profile}
+ "fit_note": one short line why it does or doesn't suit them,
+ "size_tip": size advice for clothing/shoes, else null,
+ "suggestion": a better alternative if relevant (other colour, model, healthier option), else null}
 If there is no clear product and no description, set "item" to "nothing clear".`;
 }
 
 const round10 = (n: number) => Math.round(n / 10) * 10;
+
+/** The headline answer: should I buy it? (decided in code from price + fit). */
+function decide(pv: Verdict['price_verdict'], fit: Verdict['fit_verdict'], likelyCopy: boolean, havePrice: boolean): NonNullable<Verdict['decision']> {
+  if (likelyCopy) return { label: 'Probably a copy', tone: 'bad' };
+  if (fit === 'poor_fit') return { label: 'Skip it', tone: 'bad' };
+  if (!havePrice) return { label: fit === 'great_fit' ? 'Good pick for you' : 'Could work', tone: 'neutral' };
+  switch (pv) {
+    case 'good_deal':
+    case 'fair':
+      return { label: 'Buy it', tone: 'good' };
+    case 'slightly_high':
+      return { label: 'Buy, after a little bargaining', tone: 'warn' };
+    case 'overpriced':
+      return { label: 'Only if he drops the price', tone: 'bad' };
+    default:
+      return { label: fit === 'great_fit' ? 'Good pick for you' : 'Could work', tone: 'neutral' };
+  }
+}
 
 function priceVerdict(p: Product | null, asked: number | null): Verdict['price_verdict'] {
   if (!p) return 'unknown';
@@ -54,9 +76,9 @@ function priceVerdict(p: Product | null, asked: number | null): Verdict['price_v
 /** Way below the genuine online price usually means a copy, not a bargain. */
 const suspiciouslyCheap = (p: Product | null, asked: number | null) => Boolean(p && asked && asked < p.online_price * 0.5);
 
-function recommendation(p: Product | null, pv: Verdict['price_verdict'], counter: number | null, fit: string, asked: number | null): string {
+function recommendation(p: Product | null, pv: Verdict['price_verdict'], counter: number | null, fit: string, likelyCopy: boolean): string {
   if (!p) return 'Not in our price list, so treat any number as a rough estimate.';
-  if (suspiciouslyCheap(p, asked)) {
+  if (likelyCopy) {
     return `Too cheap to be genuine (real one is about ₹${p.online_price} online). Likely a copy: only buy it as a copy, or order the original online.`;
   }
   if (fit === 'poor_fit' && pv !== 'good_deal') return 'Does not match your taste or goals. Skip it.';
@@ -131,10 +153,30 @@ export async function inspectProduct(args: { description?: string; asked_price?:
   let product: Product | null = null;
   let priceSource: 'catalog' | 'web' | 'none' = 'none';
   let web: WebPrices | null = null;
-  if (webSearchEnabled()) {
+  // Same item as the last check (e.g. the user just added the shop's price)? Reuse those online
+  // prices, so the fair range doesn't jump between two searches for the same thing.
+  const prevItem = state.verdict?.item?.toLowerCase();
+  const prevProduct = state.lastProductId ? getProduct(state.lastProductId) : null;
+  // "black T-shirt" and "black cotton T-shirt" are the same thing: compare by shared words.
+  const words = (x: string) => new Set(x.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+  const overlap = (a: string, b: string) => {
+    const A = words(a);
+    const B = words(b);
+    const shared = [...A].filter((w) => B.has(w)).length;
+    return shared / Math.max(1, Math.min(A.size, B.size));
+  };
+  const sameAsBefore = Boolean(prevProduct && prevItem && overlap(prevItem, withBrand(scan.item)) >= 0.75);
+  if (sameAsBefore && prevProduct) {
+    product = prevProduct;
+    priceSource = prevProduct.id.startsWith('web-') ? 'web' : 'catalog';
+    const prevSources = state.verdict?.sources ?? [];
+    web = prevSources.length
+      ? { query: '', offers: prevSources.map((s) => ({ title: '', ...s })), online_low: 0, online_median: prevProduct.online_price, online_high: 0, fair_low: prevProduct.local_fair[0], fair_high: prevProduct.local_fair[1] }
+      : null;
+  } else if (webSearchEnabled()) {
     const query = withBrand(scan.search_query || scan.item);
     addStatus(`Checking online prices for ${withBrand(scan.item)}…`);
-    web = await searchWebPrices(query);
+    web = await searchWebPrices(query, Boolean(scan.brand));
     if (web) {
       product = {
         id: `web-${query.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
@@ -165,7 +207,8 @@ export async function inspectProduct(args: { description?: string; asked_price?:
     : null;
   const fit = (['great_fit', 'ok_fit', 'poor_fit'].includes(parsed.fit_verdict) ? parsed.fit_verdict : 'unknown') as Verdict['fit_verdict'];
   const quality = [scan.quality_notes, scan.authenticity_flags && `Watch out: ${scan.authenticity_flags}`].filter(Boolean).join(' ');
-  const likelyCopy = suspiciouslyCheap(product, asked);
+  // "Too cheap to be genuine" only makes sense for branded goods (not food sold in different pack sizes).
+  const likelyCopy = Boolean(scan.brand) && scan.category !== 'food' && suspiciouslyCheap(product, asked);
 
   state.verdict = {
     item: product?.name ?? withBrand(scan.item),
@@ -179,7 +222,10 @@ export async function inspectProduct(args: { description?: string; asked_price?:
     fit_verdict: fit,
     fit_note: String(parsed.fit_note ?? ''),
     quality_note: quality,
-    recommendation: recommendation(product, pv, counter, fit, asked),
+    recommendation: recommendation(product, pv, counter, fit, likelyCopy),
+    size_tip: parsed.size_tip ? String(parsed.size_tip) : null,
+    suggestion: parsed.suggestion ? String(parsed.suggestion) : null,
+    decision: decide(pv, fit, likelyCopy, Boolean(product)),
     likely_copy: likelyCopy,
     price_source: priceSource,
     sources: web?.offers.map((o) => ({ source: o.source, price: o.price, link: o.link })) ?? [],
@@ -210,6 +256,14 @@ export async function inspectProduct(args: { description?: string; asked_price?:
     recommendation: state.verdict.recommendation,
     fit_verdict: fit,
     fit_note: state.verdict.fit_note,
+    size_tip: state.verdict.size_tip,
+    suggestion: state.verdict.suggestion,
+    decision: state.verdict.decision,
+    next_step: asked == null
+      ? 'Ask the user how much the shopkeeper is asking.'
+      : pv === 'overpriced' || pv === 'slightly_high'
+        ? 'Offer to negotiate with the shopkeeper (the user can tap Negotiate) or to order online.'
+        : 'Tell them it is a fair price.',
     quality_note: quality || null,
     card_shown_on_screen: true,
   };

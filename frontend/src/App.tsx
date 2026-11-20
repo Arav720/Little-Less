@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type AppState, type ConfigStatus, type Profile } from './api';
+import { api, type AppState, type Bargain, type ConfigStatus, type Profile } from './api';
+import { NegotiationBar } from './components/NegotiationBar';
 import { useCamera, uploadPhoto } from './useCamera';
 import { useVoice } from './useVoice';
 import { Feed } from './components/Feed';
@@ -135,6 +136,9 @@ export default function App() {
   const missing = config ? Object.keys(SETUP_LABELS).filter((k) => config[k] === false) : [];
   const cameraVisible = camera.on || Boolean(photo);
   const shopLanguage = state.shopLanguage ?? profile?.shopkeeper_language ?? 'Kannada';
+  // Negotiate mode = the latest bargaining card is still in progress.
+  const latestBargain = [...state.feed].reverse().find((e) => e.card?.type === 'bargain')?.card?.data as Bargain | undefined;
+  const negotiating = Boolean(latestBargain && (latestBargain.status === 'negotiating' || latestBargain.status === 'final_offer'));
 
   const cameraPanel = (compact: boolean) => (
     <CameraPanel
@@ -212,14 +216,17 @@ export default function App() {
               feed={state.feed}
               thinking={thinking}
               shopLanguage={shopLanguage}
-              userName={profile?.name}
-              needsProfile={!profile?.onboarded}
+              userName={profile?.demo ? undefined : profile?.name}
+              needsProfile={!profile?.onboarded || Boolean(profile?.demo)}
+              demoProfile={Boolean(profile?.demo)}
               onSuggest={send}
               onOpenProfile={() => setProfileOpen(true)}
+              negotiating={negotiating}
             />
           </div>
 
           <div className="shrink-0 border-t border-line/70 bg-paper/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-4 lg:bg-transparent">
+            {negotiating && latestBargain && <NegotiationBar bargain={latestBargain} language={shopLanguage} onSend={send} />}
             <Composer
               voice={voice}
               cameraOn={cameraVisible}

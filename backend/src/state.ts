@@ -27,6 +27,9 @@ export type Verdict = {
   quality_note: string;
   recommendation: string;
   likely_copy?: boolean;
+  size_tip?: string | null;
+  suggestion?: string | null;
+  decision?: { label: string; tone: 'good' | 'warn' | 'bad' | 'neutral' };
   price_source?: 'catalog' | 'web' | 'none';
   sources?: { source: string; price: number; link: string }[];
   at: number;

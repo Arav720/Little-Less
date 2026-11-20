@@ -5,44 +5,28 @@
   "shopkeeper_language": "Tamil",
   "clothing": {
     "style": "Minimal, Casual, Streetwear, Ethnic",
-    "favourite_colours": [
-      "olive",
-      "beige",
-      "navy",
-      "white"
-    ],
-    "avoid_colours": [
-      "neon"
-    ],
-    "sizes": {
-      "tshirt": "M",
-      "shoes": "UK 9"
-    },
-    "already_owns": "Several black and white T-shirts"
+    "favourite_colours": ["olive", "beige", "navy", "white"],
+    "avoid_colours": ["neon"],
+    "sizes": { "tshirt": "L", "shirt": "L", "jeans_waist": "32", "shoes": "UK 9" },
+    "already_owns": ""
   },
-  "health_goals": [
-    "More protein",
-    "Less sugar",
-    "Low budget snacks",
-    "Weight loss"
+  "wardrobe": [
+    { "item": "T-shirt", "colour": "black", "count": 3 },
+    { "item": "T-shirt", "colour": "white", "count": 2 },
+    { "item": "Shirt", "colour": "black", "count": 1 },
+    { "item": "Shirt", "colour": "light blue", "count": 1 },
+    { "item": "Jeans", "colour": "blue", "count": 2 },
+    { "item": "Sneakers", "colour": "white", "count": 1 },
+    { "item": "Earphones", "colour": "black", "count": 1 }
   ],
+  "health_goals": ["More protein", "Less sugar", "Low budget snacks", "Weight loss"],
   "tech": "Uses an Android phone; values good battery and warranty over flashy features",
   "budget_style": "Quality first: Pays more for genuine & lasting",
-  "saved_coupons": [
-    "LITTLE10"
-  ],
+  "saved_coupons": ["LITTLE10"],
   "past_purchases": [
-    {
-      "item": "Black cotton T-shirt",
-      "paid": 650,
-      "where": "Commercial Street",
-      "note": "Later saw it online for 399"
-    },
-    {
-      "item": "USB-C cable",
-      "paid": 199,
-      "where": "Online"
-    }
+    { "item": "Black cotton T-shirt", "paid": 650, "where": "Commercial Street", "note": "Later saw it online for 399" },
+    { "item": "USB-C cable", "paid": 199, "where": "Online" }
   ],
-  "onboarded": true
+  "onboarded": true,
+  "demo": true
 }
