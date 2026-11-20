@@ -3,6 +3,7 @@
 import agoraToken from 'agora-token';
 import { config } from './config.js';
 import { state, addLog } from './state.js';
+import { loadProfile } from './data.js';
 
 const { RtcTokenBuilder, RtcRole, ConvoAITokenBuilder } = agoraToken as any;
 
@@ -46,6 +47,19 @@ function authHeader(channel: string) {
 
 const SPEAKING_RULES = 'You are Little Less, a voice shopping buddy.';
 
+/**
+ * Which languages the speech-to-text should listen for: English plus every language the
+ * user speaks (from their profile) and the shopkeeper's language, e.g. "en-IN,hi-IN".
+ */
+const ASR_CODES: Record<string, string> = { english: 'en-IN', hindi: 'hi-IN', kannada: 'kn-IN', tamil: 'ta-IN', telugu: 'te-IN' };
+function asrLanguages() {
+  const p = loadProfile();
+  const names = `${String(p.speaks ?? '')},${String(p.shopkeeper_language ?? '')},hindi`.toLowerCase();
+  const codes = new Set<string>(['en-IN']);
+  for (const [name, code] of Object.entries(ASR_CODES)) if (names.includes(name)) codes.add(code);
+  return [...codes].join(',');
+}
+
 export async function startAgent(channel: string) {
   const missing: string[] = [];
   if (!config.agora.appId || !config.agora.appCertificate) missing.push('AGORA_APP_ID / AGORA_APP_CERTIFICATE');
@@ -65,11 +79,12 @@ export async function startAgent(channel: string) {
       idle_timeout: 60,
       asr: {
         vendor: 'ares',
-        language: config.asrLanguage,
+        language: asrLanguages(),
       },
       llm: {
         vendor: 'custom',
-        url: `${config.publicUrl}/api/brain/chat/completions`,
+        // ?sid= tells our brain which user this voice call belongs to.
+        url: `${config.publicUrl}/api/brain/chat/completions?sid=${encodeURIComponent(state.id)}`,
         api_key: config.brainSecret,
         // The real instructions live in brain.ts; this is only a fallback.
         system_messages: [{ role: 'system', content: SPEAKING_RULES }],
@@ -94,20 +109,53 @@ export async function startAgent(channel: string) {
     },
   };
 
+  // Noisy-room settings (hackathon venues are loud):
+  //  - SAL "locking": Agora locks onto the first clear speaker and blocks ~95% of other voices (Beta).
+  //  - Higher speech_threshold + longer interrupt durations: short background sounds don't count as speech.
+  const noiseSettings = {
+    advanced_features: { enable_sal: true },
+    sal: { sal_mode: 'locking' },
+    turn_detection: {
+      mode: 'default',
+      config: {
+        speech_threshold: 0.65,
+        start_of_speech: {
+          mode: 'vad',
+          vad_config: { interrupt_duration_ms: 400, speaking_interrupt_duration_ms: 480, prefix_padding_ms: 800 },
+        },
+        end_of_speech: { mode: 'vad', vad_config: { silence_duration_ms: 700 } },
+      },
+    },
+  };
+
   const url = `https://api.agora.io/api/conversational-ai-agent/v2/projects/${config.agora.appId}/join`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: authHeader(channel) },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
+  const join = (extra: object) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader(channel) },
+      body: JSON.stringify({ ...body, name: `little-less-${Date.now()}`, properties: { ...body.properties, ...extra } }),
+    });
+
+  // Try the richest setup first, then fall back step by step so the call always starts:
+  //   1. multi-language listening + noise settings
+  //   2. multi-language listening only
+  //   3. plain English listening (en-IN)
+  const attempts: object[] = [noiseSettings, {}, { asr: { vendor: 'ares', language: config.asrLanguage || 'en-IN' } }];
+  let res!: Response;
+  let text = '';
+  for (const [i, extra] of attempts.entries()) {
+    res = await join(extra);
+    text = await res.text();
+    if (res.ok || res.status >= 500) break;
+    addLog('error', `Agora join attempt ${i + 1} rejected (${res.status}): ${text.slice(0, 200)}`);
+  }
   if (!res.ok) {
     addLog('error', `Agora start failed (${res.status}): ${text}`);
     throw new Error(`Agora start failed (${res.status}): ${text}`);
   }
   const data = JSON.parse(text) as { agent_id: string; status: string };
   state.agent = { agentId: data.agent_id, channel };
-  addLog('system', `Agent joined (${data.status})`);
+  addLog('system', 'Call connected');
   return data;
 }
 
@@ -117,6 +165,6 @@ export async function stopAgent() {
   const url = `https://api.agora.io/api/conversational-ai-agent/v2/projects/${config.agora.appId}/agents/${agentId}/leave`;
   const res = await fetch(url, { method: 'POST', headers: { Authorization: authHeader(channel) } });
   state.agent = null;
-  addLog('system', `Agent left (${res.status})`);
+  addLog('system', 'Call ended');
   return { stopped: res.ok };
 }

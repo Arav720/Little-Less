@@ -1,5 +1,6 @@
 // Loads/saves the mock catalog and the user's profile (JSON files in backend/data).
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { current } from './state.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -27,12 +28,35 @@ export function loadCatalog(): Catalog {
   return JSON.parse(readFileSync(file('catalog.json'), 'utf8'));
 }
 
+// Each user (browser session) has their own profile, saved to data/profiles/<session>.json
+// so it survives server restarts. New users start from a neutral default.
+const profilesDir = path.join(dataDir, 'profiles');
+mkdirSync(profilesDir, { recursive: true });
+
+const DEFAULT_PROFILE: Record<string, unknown> = {
+  name: '',
+  city: 'Bengaluru',
+  speaks: 'English',
+  shopkeeper_language: 'Kannada',
+  clothing: { style: '', favourite_colours: [], avoid_colours: [], sizes: {}, already_owns: '' },
+  health_goals: [],
+  budget_style: 'Balanced: Good value for money',
+  saved_coupons: ['LITTLE10'],
+  onboarded: false,
+};
+
 export function loadProfile(): Record<string, unknown> {
-  return JSON.parse(readFileSync(file('profile.json'), 'utf8'));
+  const s = current();
+  if (s.profile) return s.profile;
+  const f = path.join(profilesDir, `${s.id}.json`);
+  s.profile = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : structuredClone(DEFAULT_PROFILE);
+  return s.profile!;
 }
 
 export function saveProfile(profile: Record<string, unknown>) {
-  writeFileSync(file('profile.json'), JSON.stringify(profile, null, 2));
+  const s = current();
+  s.profile = { ...DEFAULT_PROFILE, ...profile };
+  if (s.id !== 'default') writeFileSync(path.join(profilesDir, `${s.id}.json`), JSON.stringify(s.profile, null, 2));
 }
 
 /** Very simple keyword search: the product whose keywords appear most in the query wins. */
@@ -43,7 +67,11 @@ export function findProduct(query: string): Product | null {
   let bestScore = 0;
   for (const p of products) {
     if (p.id === query) return p;
-    const score = p.keywords.reduce((s, k) => (q.includes(k.toLowerCase()) ? s + k.length : s), 0);
+    // Whole-word match only, so "tee" doesn't match "steel" and "bar" doesn't match "barbell".
+    const score = p.keywords.reduce((s, k) => {
+      const re = new RegExp(`(^|[^a-z0-9])${k.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`);
+      return re.test(q) ? s + k.length : s;
+    }, 0);
     if (score > bestScore) {
       best = p;
       bestScore = score;
@@ -52,6 +80,13 @@ export function findProduct(query: string): Product | null {
   return best;
 }
 
+// Products found through live web search live here (in memory) so the cart can use them.
+const webProducts = new Map<string, Product>();
+
+export function registerWebProduct(p: Product) {
+  webProducts.set(p.id, p);
+}
+
 export function getProduct(id: string): Product | null {
-  return loadCatalog().products.find((p) => p.id === id) ?? null;
+  return webProducts.get(id) ?? loadCatalog().products.find((p) => p.id === id) ?? null;
 }

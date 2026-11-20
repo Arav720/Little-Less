@@ -1,8 +1,9 @@
 // The "hands" of the agent. The LLM decides WHEN to call these; the code here does the real work.
 import type OpenAI from 'openai';
 import { inspectProduct } from './vision.js';
-import { getProduct, loadCatalog, loadProfile } from './data.js';
-import { state, addLog, type Order } from './state.js';
+import { bargainStep } from './bargain.js';
+import { getProduct, loadCatalog, loadProfile, saveProfile } from './data.js';
+import { state, addLog, addStatus, addCard, updateCard, type Order } from './state.js';
 
 type Tool = OpenAI.Chat.Completions.ChatCompletionTool;
 
@@ -21,11 +22,26 @@ export const toolDefinitions: Tool[] = [
     },
   ),
   fn(
+    'set_shopkeeper_language',
+    'Change the language you use with the shopkeeper, when the user says the seller speaks another language (e.g. "he speaks Hindi", "talk in Tamil").',
+    { language: { type: 'string', enum: ['Kannada', 'Hindi', 'Tamil', 'Telugu', 'English'] } },
+    ['language'],
+  ),
+  fn(
+    'bargain_step',
+    'The bargaining engine: returns the exact price to offer next (never guess numbers yourself). Call with action "start" when the user asks you to negotiate/talk to the shopkeeper; "shop_counter" with shop_price when the user relays the shopkeeper\'s new price ("he says 500"); "shop_refuses" if he won\'t move; "shop_accepts" if he agrees.',
+    {
+      action: { type: 'string', enum: ['start', 'shop_counter', 'shop_refuses', 'shop_accepts'] },
+      shop_price: { type: 'number', description: "The shopkeeper's latest price in rupees, if known" },
+    },
+    ['action'],
+  ),
+  fn(
     'add_to_cart',
     'Add a product to the online cart (or record a shop purchase). Only after the user agrees. The user\'s saved coupon is applied automatically.',
     {
       product_id: { type: 'string', description: 'Catalog product id (defaults to the item just inspected)' },
-      source: { type: 'string', enum: ['online', 'shop'], description: 'online = order online; shop = user bought it at the shop' },
+      source: { type: 'string', enum: ['online'], description: 'Always "online": order from the Little Less online store' },
       price: { type: 'number', description: 'For source=shop: the final negotiated price' },
       qty: { type: 'number' },
     },
@@ -57,6 +73,13 @@ function cartTotals() {
 
 const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
   inspect_product: (args: { description?: string; asked_price?: number }) => inspectProduct(args),
+  set_shopkeeper_language: ({ language }: { language: string }) => {
+    const p = loadProfile();
+    saveProfile({ ...p, shopkeeper_language: language });
+    addStatus(`Talking to the shopkeeper in ${language} now`);
+    return { ok: true, shopkeeper_language: language };
+  },
+  bargain_step: (args: { action?: 'start' | 'shop_counter' | 'shop_refuses' | 'shop_accepts'; shop_price?: number }) => bargainStep(args),
 
   add_to_cart: ({ product_id, source = 'online', price, qty }: { product_id?: string; source?: 'online' | 'shop'; price?: number; qty?: number }) => {
     // The model often forgets/mangles ids between turns, so fall back to the item just inspected.
@@ -73,6 +96,8 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
     };
     state.cart.push(item);
     addLog('tool', `Added to cart: ${item.name} ₹${item.price} (${source})`);
+    addStatus(source === 'online' ? `Ready to order: ${item.name}` : `Noted: bought ${item.name} at the shop for ₹${item.price}`);
+    if (source === 'online') state.confirmTurn = state.turn; // the user must confirm the total in a later message
     // Save a round-trip: apply the user's saved coupon automatically.
     if (source === 'online' && !state.coupon) {
       const saved = (loadProfile().saved_coupons as string[] | undefined) ?? [];
@@ -80,6 +105,7 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
       if (c) {
         state.coupon = { code: c.code, percent: c.percent };
         addLog('tool', `Coupon ${c.code} applied (${c.percent}% off)`);
+        addStatus(`Applied your coupon ${c.code} (${c.percent}% off)`);
       }
     }
     return { added: item, cart: state.cart, ...cartTotals() };
@@ -99,20 +125,35 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
     const online = state.cart.filter((c) => c.source === 'online');
     if (!online.length) return { error: 'Online cart is empty.' };
     const totals = cartTotals();
-    if (!confirmed) return { needs_confirmation: true, ...totals, message: 'Tell the user the total and ask for a clear yes.' };
+    // Hard safety rule (not left to the AI): an order needs the total shown in an EARLIER turn
+    // and a clear "yes" from the user in this turn.
+    const saidYes = /\b(yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|go ahead|do it|place (it|the order)|haan|han|ha|theek hai|ಹೌದು|ಸರಿ)\b|हाँ|हां|ठीक है/i.test(
+      state.lastUserText,
+    );
+    const shownBefore = state.confirmTurn != null && state.confirmTurn < state.turn;
+    if (!confirmed || !saidYes || !shownBefore) {
+      state.confirmTurn = state.turn;
+      return {
+        needs_confirmation: true,
+        ...totals,
+        message: `Do NOT say the order is placed. Tell the user the total (₹${totals.total}) and ask them to confirm with a yes.`,
+      };
+    }
+    state.confirmTurn = null;
     const order: Order = {
       order_id: `LL${Math.floor(100000 + Math.random() * 900000)}`,
       items: online,
       ...totals,
       coupon: state.coupon?.code ?? null,
       placed_at: Date.now(),
-      eta: 'Tomorrow by 8 PM',
+      eta: 'Tomorrow by 8 PM', // sandbox store: Little Less Store
       status: 'Order placed',
     };
     state.orders.push(order);
     state.cart = state.cart.filter((c) => c.source !== 'online');
     state.coupon = null;
     addLog('tool', `Order ${order.order_id} placed: ₹${order.total} (sandbox payment)`);
+    state.orderCardIds[order.order_id] = addCard('order', { ...order }).id;
     return { order, payment: 'sandbox payment successful' };
   },
 
@@ -123,6 +164,7 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
     const mins = (Date.now() - order.placed_at) / 60_000;
     order.status = mins < 1 ? 'Order placed' : mins < 3 ? 'Packed' : mins < 6 ? 'Shipped' : 'Out for delivery';
     addLog('tool', `Tracking ${order.order_id}: ${order.status}`);
+    updateCard(state.orderCardIds[order.order_id] ?? null, { ...order });
     return order;
   },
 
@@ -132,6 +174,8 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
     order.return_requested = reason;
     order.status = 'Return pickup scheduled';
     addLog('tool', `Return started for ${order.order_id}: ${reason}`);
+    updateCard(state.orderCardIds[order.order_id] ?? null, { ...order });
+    addStatus(`Return pickup booked for order ${order.order_id}`);
     return { order_id: order.order_id, pickup: 'Tomorrow 10 AM - 1 PM', refund: `₹${order.total} to original payment method` };
   },
 };

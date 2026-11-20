@@ -8,6 +8,7 @@ export const config = {
   publicUrl: env('PUBLIC_URL').replace(/\/$/, ''),
   brainSecret: env('BRAIN_SECRET', 'little-less-dev'),
   asrLanguage: env('ASR_LANGUAGE', 'en-IN'),
+  serperKey: env('SERPER_API_KEY'),
   agora: {
     appId: env('AGORA_APP_ID'),
     appCertificate: env('AGORA_APP_CERTIFICATE'),
@@ -27,6 +28,14 @@ export const config = {
     fallbackModel: env('LLM_FALLBACK_MODEL'),
     timeoutMs: Number(env('LLM_TIMEOUT_MS', '5000')),
   },
+  // Groq: very fast. Each model has its own free rate limit, so we list several and
+  // move to the next one instantly if one is busy.
+  groq: {
+    apiKey: env('GROQ_API_KEY'),
+    baseUrl: 'https://api.groq.com/openai/v1',
+    brainModels: env('GROQ_BRAIN_MODELS', 'openai/gpt-oss-120b,openai/gpt-oss-20b').split(',').map((s) => s.trim()).filter(Boolean),
+    visionModels: env('GROQ_VISION_MODELS', 'qwen/qwen3.8-27b').split(',').map((s) => s.trim()).filter(Boolean),
+  },
 };
 
 /** Which settings are filled in — shown on the app's setup screen (never the values). */
@@ -38,7 +47,8 @@ export function configStatus() {
     agoraRestKey: Boolean(config.agora.customerId && config.agora.customerSecret),
     murfKey: Boolean(config.murf.apiKey),
     murfVoice: Boolean(config.murf.voiceId),
-    llmKey: Boolean(config.llm.apiKey),
+    llmKey: Boolean(config.llm.apiKey || config.groq.apiKey),
+    webSearch: Boolean(config.serperKey),
     llmModel: config.llm.model,
     asrLanguage: config.asrLanguage,
   };

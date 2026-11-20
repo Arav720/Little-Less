@@ -1,6 +1,9 @@
 import { rupees, type Verdict } from '../api';
+import { StoreIcon, TagIcon } from '../icons';
 
-const PRICE_LABEL: Record<Verdict['price_verdict'], { text: string; tone: 'good' | 'warn' | 'bad' | 'neutral' }> = {
+type Tone = 'good' | 'warn' | 'bad' | 'neutral';
+
+const PRICE: Record<Verdict['price_verdict'], { text: string; tone: Tone }> = {
   good_deal: { text: 'Good deal', tone: 'good' },
   fair: { text: 'Fair price', tone: 'good' },
   slightly_high: { text: 'A little high', tone: 'warn' },
@@ -9,117 +12,117 @@ const PRICE_LABEL: Record<Verdict['price_verdict'], { text: string; tone: 'good'
   unknown: { text: 'Price unclear', tone: 'neutral' },
 };
 
-const FIT_LABEL: Record<Verdict['fit_verdict'], { text: string; tone: 'good' | 'warn' | 'bad' | 'neutral' }> = {
+const FIT: Record<Verdict['fit_verdict'], { text: string; tone: Tone }> = {
   great_fit: { text: 'Suits you', tone: 'good' },
-  ok_fit: { text: 'Okay for you', tone: 'warn' },
+  ok_fit: { text: 'Okay for you', tone: 'neutral' },
   poor_fit: { text: 'Not for you', tone: 'bad' },
-  unknown: { text: 'Fit unclear', tone: 'neutral' },
+  unknown: { text: '', tone: 'neutral' },
 };
 
-const TONE = {
+const TONE: Record<Tone, string> = {
   good: 'bg-leaf-soft text-leaf',
   warn: 'bg-amber-100 text-amber-800',
   bad: 'bg-chilli-soft text-chilli',
-  neutral: 'bg-line/60 text-muted',
+  neutral: 'bg-paper text-muted',
 };
 
-/** Horizontal price ruler: fair band + markers for asked / counter / online. */
+/** Ruler: fair band, plus markers for what the shop asks and the online price. */
 function PriceRuler({ v }: { v: Verdict }) {
-  const points = [v.asked_price, v.fair_low, v.fair_high, v.online_price, v.counter_offer].filter(
-    (n): n is number => typeof n === 'number' && n > 0,
-  );
-  if (points.length < 2) return null;
-  const min = Math.min(...points) * 0.85;
-  const max = Math.max(...points) * 1.08;
-  const pos = (n: number) => `${((n - min) / (max - min)) * 100}%`;
-
-  const markers = [
-    { value: v.online_price, label: 'Online', color: 'bg-sky', text: 'text-sky' },
-    { value: v.counter_offer, label: 'Offer', color: 'bg-marigold', text: 'text-amber-700' },
-    { value: v.asked_price, label: 'Asked', color: 'bg-chilli', text: 'text-chilli' },
-  ].filter((m) => typeof m.value === 'number' && m.value > 0) as { value: number; label: string; color: string; text: string }[];
-
+  const pts = [v.asked_price, v.fair_low, v.fair_high, v.online_price].filter((n): n is number => typeof n === 'number' && n > 0);
+  if (pts.length < 2) return null;
+  const min = Math.min(...pts) * 0.8;
+  const max = Math.max(...pts) * 1.1;
+  const pos = (n: number) => `${Math.max(2, Math.min(98, ((n - min) / (max - min)) * 100))}%`;
   return (
-    <div className="mt-9 mb-9">
-      <div className="relative h-2.5 rounded-full bg-line">
-        {v.fair_low != null && v.fair_high != null && (
-          <div
-            className="absolute inset-y-0 rounded-full bg-leaf/70"
-            style={{ left: pos(v.fair_low), width: `calc(${pos(v.fair_high)} - ${pos(v.fair_low)} + 4px)` }}
-            title="Fair local price"
-          />
-        )}
-        {markers.map((m, i) => (
-          <div key={m.label} className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ left: pos(m.value) }}>
-            <div className={`h-5 w-1.5 rounded-full ${m.color} ring-2 ring-card`} />
-            <div className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-semibold ${m.text} ${i % 2 ? '-top-5' : 'top-6'}`}>
-              {m.label} {rupees(m.value)}
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="relative mb-7 mt-8 h-2 rounded-full bg-line" role="img" aria-label="Price comparison">
+      {v.fair_low != null && v.fair_high != null && (
+        <div
+          className="absolute inset-y-0 rounded-full bg-leaf/60"
+          style={{ left: pos(v.fair_low), width: `calc(${pos(v.fair_high)} - ${pos(v.fair_low)} + 6px)` }}
+        />
+      )}
+      {v.online_price != null && (
+        <Marker at={pos(v.online_price)} color="bg-sky" label={`Online ${rupees(v.online_price)}`} cls="text-sky top-4" />
+      )}
+      {v.asked_price != null && (
+        <Marker at={pos(v.asked_price)} color="bg-chilli" label={`Shop ${rupees(v.asked_price)}`} cls="text-chilli -top-6" />
+      )}
     </div>
   );
 }
 
-export function VerdictCard({ verdict, scanning }: { verdict: Verdict | null; scanning: string | null }) {
-  if (!verdict) {
-    return (
-      <section className="rounded-3xl border border-dashed border-line bg-card/60 p-6">
-        <p className="font-display text-xl font-bold">No verdict yet</p>
-        <p className="mt-1 text-sm text-muted">
-          {scanning
-            ? `Looking at: ${scanning}`
-            : 'Point the camera at something and say what the shopkeeper is asking. "Bhaiya says 800, is it worth it?"'}
-        </p>
-      </section>
-    );
-  }
+function Marker({ at, color, label, cls }: { at: string; color: string; label: string; cls: string }) {
+  return (
+    <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ left: at }}>
+      <div className={`h-4 w-1.5 rounded-full ring-2 ring-card ${color}`} />
+      <span className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-semibold ${cls}`}>{label}</span>
+    </div>
+  );
+}
 
-  const price = PRICE_LABEL[verdict.price_verdict] ?? PRICE_LABEL.unknown;
-  const fit = FIT_LABEL[verdict.fit_verdict] ?? FIT_LABEL.unknown;
+export function VerdictCard({ v }: { v: Verdict }) {
+  const price = PRICE[v.price_verdict] ?? PRICE.unknown;
+  const fit = FIT[v.fit_verdict] ?? FIT.unknown;
+  const sources = (v.sources ?? []).slice(0, 4);
 
   return (
-    <section className="rounded-3xl border border-line bg-card p-5 shadow-[0_1px_0_#e4dac8]">
+    <article className="w-full rounded-2xl border border-line bg-card p-4 shadow-[0_1px_2px_rgba(29,26,22,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-muted">Verdict</p>
-          <h2 className="font-display text-2xl font-bold leading-tight break-words">{verdict.item}</h2>
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            <TagIcon size={13} /> Price check
+          </p>
+          <h3 className="mt-0.5 break-words font-display text-lg font-bold capitalize leading-snug">{v.item}</h3>
         </div>
-        {verdict.asked_price != null && (
+        {v.asked_price != null && (
           <div className="shrink-0 text-right">
-            <p className="text-xs text-muted">Shop asks</p>
-            <p className="font-display text-2xl font-extrabold text-chilli">{rupees(verdict.asked_price)}</p>
+            <p className="text-[11px] text-muted">Shop asks</p>
+            <p className="font-display text-xl font-extrabold text-chilli">{rupees(v.asked_price)}</p>
           </div>
         )}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <span className={`rounded-full px-3 py-1 text-sm font-semibold ${TONE[price.tone]}`}>{price.text}</span>
-        <span className={`rounded-full px-3 py-1 text-sm font-semibold ${TONE[fit.tone]}`}>{fit.text}</span>
-        {verdict.fair_low != null && (
-          <span className="rounded-full bg-paper px-3 py-1 text-sm text-muted">
-            Fair {rupees(verdict.fair_low)}–{rupees(verdict.fair_high)}
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {v.likely_copy ? (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONE.bad}`}>Likely a copy</span>
+        ) : (
+          <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONE[price.tone]}`}>{price.text}</span>
+        )}
+        {fit.text && <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${TONE[fit.tone]}`}>{fit.text}</span>}
+        {v.fair_low != null && v.fair_high != null && (
+          <span className="rounded-full bg-paper px-2.5 py-1 text-xs text-muted">
+            Fair {rupees(v.fair_low)}–{rupees(v.fair_high)}
           </span>
         )}
       </div>
 
-      <PriceRuler v={verdict} />
+      <PriceRuler v={v} />
 
-      <dl className="space-y-2.5 text-sm">
-        <div>
-          <dt className="font-semibold">For you</dt>
-          <dd className="text-muted">{verdict.fit_note}</dd>
-        </div>
-        {verdict.quality_note && (
-          <div>
-            <dt className="font-semibold">Quality</dt>
-            <dd className="text-muted">{verdict.quality_note}</dd>
+      {v.fit_note && <p className="text-sm text-ink/80">{v.fit_note}</p>}
+      {v.quality_note && <p className="mt-1 text-sm text-muted">{v.quality_note}</p>}
+
+      <p className="mt-3 rounded-xl bg-ink px-3.5 py-2.5 text-sm font-medium text-paper">{v.recommendation}</p>
+
+      {sources.length > 0 && (
+        <div className="mt-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-muted">
+            <StoreIcon size={13} /> Live prices online
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {sources.map((s, i) => (
+              <a
+                key={i}
+                href={s.link}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full border border-line bg-paper px-2.5 py-1 text-xs transition-colors hover:border-ink"
+              >
+                {s.source || 'Store'} · <span className="font-semibold">{rupees(s.price)}</span>
+              </a>
+            ))}
           </div>
-        )}
-      </dl>
-
-      <p className="mt-4 rounded-2xl bg-ink px-4 py-3 text-sm font-medium text-paper">{verdict.recommendation}</p>
-    </section>
+        </div>
+      )}
+    </article>
   );
 }

@@ -76,11 +76,13 @@ export function useVoice() {
     setStatus('idle');
   }, [cleanup]);
 
-  const toggleMute = useCallback(async () => {
-    if (!micRef.current) return;
-    await micRef.current.setEnabled(muted);
-    setMuted(!muted);
-  }, [muted]);
+  // Muting uses volume 0 (not unpublishing), so unmuting is instant — needed for hold-to-talk.
+  const setMicOpen = useCallback((open: boolean) => {
+    micRef.current?.setVolume(open ? 100 : 0);
+    setMuted(!open);
+  }, []);
 
-  return { status, start, stop, muted, toggleMute, agentTalking, youTalking, micLevel, error };
+  const toggleMute = useCallback(() => setMicOpen(muted), [muted, setMicOpen]);
+
+  return { status, start, stop, muted, toggleMute, setMicOpen, agentTalking, youTalking, micLevel, error };
 }

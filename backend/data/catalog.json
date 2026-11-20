@@ -1,17 +1,34 @@
 {
   "_note": "Mock price data for the demo. Edit these to match the real items you carry. Prices in INR. price_type: negotiable (street/market) or fixed_mrp (packaged goods).",
   "coupons": [
-    { "code": "LITTLE10", "percent": 10, "description": "10% off your first online order" },
-    { "code": "STREET5", "percent": 5, "description": "5% off when you skip an overpriced shop" }
+    {
+      "code": "LITTLE10",
+      "percent": 10,
+      "description": "10% off your first online order"
+    },
+    {
+      "code": "STREET5",
+      "percent": 5,
+      "description": "5% off when you skip an overpriced shop"
+    }
   ],
   "products": [
     {
       "id": "tee-olive-plain",
       "name": "Plain cotton T-shirt (round neck)",
       "category": "clothing",
-      "keywords": ["t-shirt", "tshirt", "tee", "t shirt", "cotton", "round neck", "plain", "shirt"],
+      "keywords": [
+        "t-shirt",
+        "tshirt",
+        "t shirt",
+        "tee",
+        "round neck"
+      ],
       "price_type": "negotiable",
-      "local_fair": [350, 450],
+      "local_fair": [
+        350,
+        450
+      ],
       "online_price": 399,
       "online_seller": "QuickKart (mock)",
       "mrp": 999,
@@ -21,9 +38,19 @@
       "id": "earphones-neckband",
       "name": "boAt Rockerz 255 style wireless neckband",
       "category": "electronics",
-      "keywords": ["earphones", "neckband", "boat", "rockerz", "bluetooth", "wireless", "headphones"],
+      "keywords": [
+        "earphones",
+        "neckband",
+        "rockerz",
+        "boat",
+        "in-ear",
+        "headphones"
+      ],
       "price_type": "negotiable",
-      "local_fair": [850, 1000],
+      "local_fair": [
+        850,
+        1000
+      ],
       "online_price": 899,
       "online_seller": "QuickKart (mock)",
       "mrp": 2990,
@@ -33,9 +60,17 @@
       "id": "phone-charger-20w",
       "name": "20W USB-C fast charger",
       "category": "electronics",
-      "keywords": ["charger", "adapter", "usb-c", "type c", "fast charger", "20w", "power adapter"],
+      "keywords": [
+        "charger",
+        "power adapter",
+        "fast charger",
+        "20w"
+      ],
       "price_type": "negotiable",
-      "local_fair": [300, 450],
+      "local_fair": [
+        300,
+        450
+      ],
       "online_price": 349,
       "online_seller": "QuickKart (mock)",
       "mrp": 1299,
@@ -45,9 +80,17 @@
       "id": "sunglasses-wayfarer",
       "name": "Wayfarer style sunglasses",
       "category": "accessories",
-      "keywords": ["sunglasses", "glasses", "shades", "wayfarer", "goggles"],
+      "keywords": [
+        "sunglasses",
+        "shades",
+        "wayfarer",
+        "goggles"
+      ],
       "price_type": "negotiable",
-      "local_fair": [200, 350],
+      "local_fair": [
+        200,
+        350
+      ],
       "online_price": 299,
       "online_seller": "QuickKart (mock)",
       "mrp": 1499,
@@ -57,18 +100,33 @@
       "id": "protein-bar",
       "name": "Protein bar (60 g)",
       "category": "food",
-      "keywords": ["protein bar", "bar", "snack", "energy bar", "protein", "granola"],
+      "keywords": [
+        "protein bar",
+        "energy bar",
+        "granola bar"
+      ],
       "price_type": "fixed_mrp",
-      "local_fair": [60, 60],
+      "local_fair": [
+        60,
+        60
+      ],
       "online_price": 55,
       "online_seller": "QuickKart (mock)",
       "mrp": 60,
-      "nutrition": { "protein_g": 10, "sugar_g": 18, "calories": 240 },
+      "nutrition": {
+        "protein_g": 10,
+        "sugar_g": 18,
+        "calories": 240
+      },
       "healthier_alternative": {
         "id": "protein-bar-low-sugar",
         "name": "High-protein low-sugar bar (60 g)",
         "online_price": 70,
-        "nutrition": { "protein_g": 20, "sugar_g": 2, "calories": 210 }
+        "nutrition": {
+          "protein_g": 20,
+          "sugar_g": 2,
+          "calories": 210
+        }
       },
       "notes": "Packaged goods: selling above MRP is not allowed in India."
     },
@@ -76,13 +134,23 @@
       "id": "protein-bar-low-sugar",
       "name": "High-protein low-sugar bar (60 g)",
       "category": "food",
-      "keywords": ["low sugar bar", "high protein bar"],
+      "keywords": [
+        "low sugar bar",
+        "high protein bar"
+      ],
       "price_type": "fixed_mrp",
-      "local_fair": [70, 70],
+      "local_fair": [
+        70,
+        70
+      ],
       "online_price": 70,
       "online_seller": "QuickKart (mock)",
       "mrp": 75,
-      "nutrition": { "protein_g": 20, "sugar_g": 2, "calories": 210 },
+      "nutrition": {
+        "protein_g": 20,
+        "sugar_g": 2,
+        "calories": 210
+      },
       "notes": ""
     }
   ]
