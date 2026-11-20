@@ -49,6 +49,7 @@ export const state = {
   latestFrame: null as null | { dataUrl: string; at: number },
   lastScan: null as Scan | null,
   verdict: null as Verdict | null,
+  lastProductId: null as string | null,
   cart: [] as CartItem[],
   coupon: null as null | { code: string; percent: number },
   orders: [] as Order[],
@@ -67,6 +68,7 @@ export function addLog(kind: LogEntry['kind'], text: string) {
 export function resetShopping() {
   state.lastScan = null;
   state.verdict = null;
+  state.lastProductId = null;
   state.cart = [];
   state.coupon = null;
   state.orders = [];

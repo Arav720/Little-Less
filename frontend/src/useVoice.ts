@@ -15,8 +15,13 @@ export function useVoice() {
   const [agentTalking, setAgentTalking] = useState(false);
   const [youTalking, setYouTalking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [micLevel, setMicLevel] = useState(0);
+  const levelTimer = useRef<number | null>(null);
 
   const cleanup = useCallback(async () => {
+    if (levelTimer.current) window.clearInterval(levelTimer.current);
+    levelTimer.current = null;
+    setMicLevel(0);
     micRef.current?.close();
     micRef.current = null;
     await clientRef.current?.leave().catch(() => {});
@@ -40,23 +45,19 @@ export function useVoice() {
         if (mediaType === 'audio') user.audioTrack?.play();
       });
 
-      // Show who is speaking.
-      client.enableAudioVolumeIndicator();
-      client.on('volume-indicator', (volumes) => {
-        let agent = false;
-        let you = false;
-        for (const v of volumes) {
-          if (String(v.uid) === String(session.uid)) you = v.level > 8;
-          else agent = agent || v.level > 8;
-        }
-        setAgentTalking(agent);
-        setYouTalking(you);
-      });
-
       await client.join(session.appId, session.channel, session.token, session.uid);
       const mic = await AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
       micRef.current = mic;
       await client.publish(mic);
+
+      // Live levels (10x per second) for the mic meter and "who is speaking".
+      levelTimer.current = window.setInterval(() => {
+        const you = micRef.current?.enabled ? micRef.current.getVolumeLevel() : 0;
+        const agent = Math.max(0, ...client.remoteUsers.map((u) => u.audioTrack?.getVolumeLevel() ?? 0));
+        setMicLevel(you);
+        setYouTalking(you > 0.08);
+        setAgentTalking(agent > 0.05);
+      }, 100);
 
       await api.post('/api/agent/start', { channel: session.channel });
       setMuted(false);
@@ -81,5 +82,5 @@ export function useVoice() {
     setMuted(!muted);
   }, [muted]);
 
-  return { status, start, stop, muted, toggleMute, agentTalking, youTalking, error };
+  return { status, start, stop, muted, toggleMute, agentTalking, youTalking, micLevel, error };
 }

@@ -22,7 +22,10 @@ export const config = {
   llm: {
     apiKey: env('LLM_API_KEY'),
     baseUrl: env('LLM_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai/'),
-    model: env('LLM_MODEL', 'gemini-2.5-flash'),
+    model: env('LLM_MODEL', 'gemini-3.1-flash-lite'),
+    // Used once if the main model times out / errors. Empty = retry the same model.
+    fallbackModel: env('LLM_FALLBACK_MODEL'),
+    timeoutMs: Number(env('LLM_TIMEOUT_MS', '5000')),
   },
 };
 

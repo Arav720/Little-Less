@@ -5,7 +5,7 @@ import { config, configStatus } from './config.js';
 import { state, addLog, publicState, resetShopping } from './state.js';
 import { userToken, USER_UID, startAgent, stopAgent } from './agora.js';
 import { brainHandler, textChatHandler } from './brain.js';
-import { scanLatestFrame } from './vision.js';
+import { inspectProduct } from './vision.js';
 import { loadProfile, saveProfile } from './data.js';
 
 const app = express();
@@ -54,7 +54,7 @@ app.post('/api/frame', (req, res) => {
 // Manual "Scan now" button (useful to test vision without talking).
 app.post('/api/scan', async (_req, res) => {
   try {
-    res.json(await scanLatestFrame());
+    res.json(await inspectProduct());
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -73,10 +73,10 @@ app.put('/api/profile', (req, res) => {
   res.json({ ok: true });
 });
 app.post('/api/dev/sample', async (_req, res) => {
+  // Fills the screen with a sample verdict + cart (UI rehearsal, no LLM needed).
   const { runTool } = await import('./tools.js');
-  await runTool('show_verdict', JSON.stringify({ item: 'Olive cotton T-shirt', asked_price: 800, fair_low: 350, fair_high: 450, online_price: 399, price_verdict: 'overpriced', counter_offer: 380, fit_verdict: 'great_fit', fit_note: 'Olive is in your palette and you only own black and white tees.', quality_note: 'Stitching looks even; decent 180 GSM cotton.', recommendation: 'Offer ₹380. If he won’t go below ₹450, order it online for ₹359 with LITTLE10.' }));
+  state.verdict = { item: 'Olive cotton T-shirt', asked_price: 800, fair_low: 350, fair_high: 450, online_price: 399, price_verdict: 'overpriced', counter_offer: 380, fit_verdict: 'great_fit', fit_note: 'Olive is in your palette and you only own black and white tees.', quality_note: 'Stitching looks even; decent 180 GSM cotton.', recommendation: 'Offer ₹380. Walk away above ₹450, or order online for ₹399.', at: Date.now() };
   await runTool('add_to_cart', JSON.stringify({ product_id: 'tee-olive-plain', source: 'online' }));
-  await runTool('apply_coupon', JSON.stringify({ code: 'LITTLE10' }));
   res.json({ ok: true });
 });
 app.post('/api/reset', (_req, res) => {

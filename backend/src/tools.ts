@@ -1,8 +1,8 @@
 // The "hands" of the agent. The LLM decides WHEN to call these; the code here does the real work.
 import type OpenAI from 'openai';
-import { scanLatestFrame } from './vision.js';
-import { findProduct, getProduct, loadCatalog } from './data.js';
-import { state, addLog, type Verdict, type Order } from './state.js';
+import { inspectProduct } from './vision.js';
+import { getProduct, loadCatalog, loadProfile } from './data.js';
+import { state, addLog, type Order } from './state.js';
 
 type Tool = OpenAI.Chat.Completions.ChatCompletionTool;
 
@@ -12,44 +12,24 @@ const fn = (name: string, description: string, properties: Record<string, unknow
 });
 
 export const toolDefinitions: Tool[] = [
-  fn('look_at_camera', 'Look at the live camera to identify the product the user is showing. Call this whenever the user says "check this", "see this", mentions a product in front of them, or tells you a shopkeeper\'s price.'),
   fn(
-    'check_price',
-    'Look up fair local market price, online price and MRP for a product. Call after look_at_camera (or when the user names a product).',
+    'inspect_product',
+    'ONE call that looks at the live camera, identifies the product, checks fair/online price, judges if it suits the user, and shows the verdict card on screen. Call it whenever the user shows something, says "check this", or mentions a shopkeeper\'s price.',
     {
-      product: { type: 'string', description: 'Product description or search query, e.g. "plain cotton t-shirt"' },
+      description: { type: 'string', description: 'What the user said the product is, if they described it (e.g. "olive cotton t-shirt")' },
       asked_price: { type: 'number', description: 'Price the shopkeeper is asking, in rupees, if the user said it' },
     },
-    ['product'],
-  ),
-  fn(
-    'show_verdict',
-    'Show the verdict scorecard on the user\'s screen. Call once you know the price check and personal fit, BEFORE speaking the verdict.',
-    {
-      item: { type: 'string' },
-      asked_price: { type: 'number' },
-      fair_low: { type: 'number' },
-      fair_high: { type: 'number' },
-      online_price: { type: 'number' },
-      price_verdict: { type: 'string', enum: ['fair', 'slightly_high', 'overpriced', 'good_deal', 'fixed_mrp', 'unknown'] },
-      counter_offer: { type: 'number', description: 'Suggested price to offer the shopkeeper' },
-      fit_verdict: { type: 'string', enum: ['great_fit', 'ok_fit', 'poor_fit', 'unknown'] },
-      fit_note: { type: 'string', description: 'One line: why it does / does not suit the user\'s stated style, colours, wardrobe or goals' },
-      quality_note: { type: 'string', description: 'One line on quality / authenticity' },
-      recommendation: { type: 'string', description: 'One line: what the user should do' },
-    },
-    ['item', 'price_verdict', 'fit_verdict', 'fit_note', 'recommendation'],
   ),
   fn(
     'add_to_cart',
-    'Add a product to the online cart (or record a shop purchase). Only after the user agrees.',
+    'Add a product to the online cart (or record a shop purchase). Only after the user agrees. The user\'s saved coupon is applied automatically.',
     {
-      product_id: { type: 'string', description: 'Catalog product id from check_price' },
+      product_id: { type: 'string', description: 'Catalog product id (defaults to the item just inspected)' },
       source: { type: 'string', enum: ['online', 'shop'], description: 'online = order online; shop = user bought it at the shop' },
       price: { type: 'number', description: 'For source=shop: the final negotiated price' },
       qty: { type: 'number' },
     },
-    ['product_id', 'source'],
+    ['source'],
   ),
   fn('apply_coupon', 'Apply a discount coupon to the online cart. Use the user\'s saved coupons.', { code: { type: 'string' } }, ['code']),
   fn('view_cart', 'Get the current cart contents and total.'),
@@ -68,7 +48,6 @@ export const toolDefinitions: Tool[] = [
   ),
 ];
 
-const round10 = (n: number) => Math.round(n / 10) * 10;
 
 function cartTotals() {
   const subtotal = state.cart.filter((c) => c.source === 'online').reduce((s, c) => s + c.price * c.qty, 0);
@@ -77,65 +56,14 @@ function cartTotals() {
 }
 
 const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
-  look_at_camera: () => scanLatestFrame(),
+  inspect_product: (args: { description?: string; asked_price?: number }) => inspectProduct(args),
 
-  check_price: ({ product, asked_price }: { product: string; asked_price?: number }) => {
-    const p = findProduct(product);
-    if (!p) {
-      addLog('tool', `Price check: "${product}" not in catalog`);
-      return {
-        found: false,
-        message: 'Not in our price database. Give a rough estimate from general knowledge and clearly say it is only an estimate.',
-      };
-    }
-    const [low, high] = p.local_fair;
-    const asked = typeof asked_price === 'number' ? asked_price : null;
-    const overBy = asked ? Math.round(((asked - high) / high) * 100) : null;
-    const result = {
-      found: true,
-      product_id: p.id,
-      name: p.name,
-      category: p.category,
-      price_type: p.price_type,
-      fair_local_range: [low, high],
-      online_price: p.online_price,
-      online_seller: p.online_seller,
-      mrp: p.mrp,
-      asked_price: asked,
-      percent_above_fair_high: overBy,
-      suggested_counter_offer: p.price_type === 'negotiable' ? round10(low + (high - low) * 0.3) : null,
-      walk_away_above: p.price_type === 'negotiable' ? high : null,
-      nutrition: p.nutrition ?? null,
-      healthier_alternative: p.healthier_alternative ?? null,
-      notes: p.notes ?? '',
-      rule: p.price_type === 'fixed_mrp' ? 'Packaged good: no bargaining, but selling above MRP is illegal in India.' : 'Negotiable.',
-    };
-    addLog('tool', `Price check: ${p.name} fair ₹${low}-${high}, online ₹${p.online_price}${asked ? `, asked ₹${asked}` : ''}`);
-    return result;
-  },
-
-  show_verdict: (args: Omit<Verdict, 'at'>) => {
-    state.verdict = {
-      item: args.item,
-      asked_price: args.asked_price ?? null,
-      fair_low: args.fair_low ?? null,
-      fair_high: args.fair_high ?? null,
-      online_price: args.online_price ?? null,
-      price_verdict: args.price_verdict ?? 'unknown',
-      counter_offer: args.counter_offer ?? null,
-      fit_verdict: args.fit_verdict ?? 'unknown',
-      fit_note: args.fit_note ?? '',
-      quality_note: args.quality_note ?? '',
-      recommendation: args.recommendation ?? '',
-      at: Date.now(),
-    };
-    addLog('tool', `Verdict shown: ${args.price_verdict} / ${args.fit_verdict}`);
-    return { shown: true };
-  },
-
-  add_to_cart: ({ product_id, source, price, qty }: { product_id: string; source: 'online' | 'shop'; price?: number; qty?: number }) => {
-    const p = getProduct(product_id);
-    if (!p) return { error: `Unknown product_id ${product_id}` };
+  add_to_cart: ({ product_id, source = 'online', price, qty }: { product_id?: string; source?: 'online' | 'shop'; price?: number; qty?: number }) => {
+    // The model often forgets/mangles ids between turns, so fall back to the item just inspected.
+    const p = (product_id && getProduct(product_id)) || (state.lastProductId && getProduct(state.lastProductId));
+    if (!p) return { error: 'No product selected yet. Ask the user to show or name the item first.' };
+    const existing = state.cart.find((c) => c.product_id === p.id && c.source === source);
+    if (existing) return { already_in_cart: existing, cart: state.cart, ...cartTotals() };
     const item = {
       product_id: p.id,
       name: p.name,
@@ -145,6 +73,15 @@ const handlers: Record<string, (args: any) => Promise<unknown> | unknown> = {
     };
     state.cart.push(item);
     addLog('tool', `Added to cart: ${item.name} ₹${item.price} (${source})`);
+    // Save a round-trip: apply the user's saved coupon automatically.
+    if (source === 'online' && !state.coupon) {
+      const saved = (loadProfile().saved_coupons as string[] | undefined) ?? [];
+      const c = loadCatalog().coupons.find((x) => saved.includes(x.code));
+      if (c) {
+        state.coupon = { code: c.code, percent: c.percent };
+        addLog('tool', `Coupon ${c.code} applied (${c.percent}% off)`);
+      }
+    }
     return { added: item, cart: state.cart, ...cartTotals() };
   },
 
