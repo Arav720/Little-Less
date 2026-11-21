@@ -103,6 +103,8 @@ export function VerdictCard({ v, actions }: { v: Verdict; actions?: VerdictActio
   const price = PRICE[v.price_verdict] ?? PRICE.unknown;
   const fit = FIT[v.fit_verdict] ?? FIT.unknown;
   const sources = (v.sources ?? []).slice(0, 4);
+  // Cheapest real store listing: "buy it from here".
+  const best = [...(v.sources ?? [])].filter((s) => s.link && s.price > 0).sort((a, b) => a.price - b.price)[0] ?? null;
   const pricey = v.price_verdict === 'overpriced' || v.price_verdict === 'slightly_high';
 
   return (
@@ -180,7 +182,23 @@ export function VerdictCard({ v, actions }: { v: Verdict; actions?: VerdictActio
                 </a>
               ))}
             </div>
+            <p className="mt-1.5 text-[11px] text-muted">Prices are for one piece.</p>
           </div>
+        )}
+        {v.pack_deal && (
+          <a
+            href={v.pack_deal.link}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 flex items-center justify-between gap-2 rounded-xl border border-dashed border-line px-3 py-2 text-xs hover:border-ink"
+          >
+            <span>
+              Buying more? Pack of {v.pack_deal.count} on {v.pack_deal.source || 'a store'}
+            </span>
+            <span className="shrink-0 font-semibold">
+              {rupees(v.pack_deal.price)} · {rupees(v.pack_deal.per_unit)} each
+            </span>
+          </a>
         )}
 
         {/* Next steps (only on the latest price card) */}
@@ -197,13 +215,15 @@ export function VerdictCard({ v, actions }: { v: Verdict; actions?: VerdictActio
                     Negotiate for me
                   </button>
                 )}
-                {v.online_price != null && (
-                  <button
-                    onClick={() => actions.onSend('Order it online instead.')}
-                    className={`rounded-full border border-line px-4 py-2.5 text-sm font-semibold hover:border-ink ${pricey ? '' : 'flex-1'}`}
+                {best && (
+                  <a
+                    href={best.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`rounded-full border border-line px-4 py-2.5 text-center text-sm font-semibold hover:border-ink ${pricey ? '' : 'flex-1'}`}
                   >
-                    Buy online · {rupees(v.online_price)}
-                  </button>
+                    Best price: {best.source} · {rupees(best.price)}
+                  </a>
                 )}
               </div>
             )}

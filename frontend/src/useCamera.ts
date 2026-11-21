@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api';
 
 const FRAME_EVERY_MS = 1500;
-const FRAME_WIDTH = 640;
+const FRAME_WIDTH = 768; // enough detail to read brand names and labels
 
 export function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -81,7 +81,7 @@ export async function uploadPhoto(file: File) {
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
   canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const image = canvas.toDataURL('image/jpeg', 0.75);
-  await api.post('/api/frame', { image });
+  const image = canvas.toDataURL('image/jpeg', 0.8);
+  await api.post('/api/frame', { image, source: 'photo' });
   return image;
 }

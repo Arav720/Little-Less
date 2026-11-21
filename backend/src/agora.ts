@@ -4,6 +4,7 @@ import agoraToken from 'agora-token';
 import { config } from './config.js';
 import { state, addLog } from './state.js';
 import { loadProfile } from './data.js';
+import { voiceprintUrl } from './voiceprint.js';
 
 const { RtcTokenBuilder, RtcRole, ConvoAITokenBuilder } = agoraToken as any;
 
@@ -48,17 +49,24 @@ function authHeader(channel: string) {
 const SPEAKING_RULES = 'You are Little Less, a voice shopping buddy.';
 
 /**
- * Which languages the speech-to-text should listen for: English plus every language the
- * user speaks (from their profile) and the shopkeeper's language, e.g. "en-IN,hi-IN".
+ * Which languages the speech-to-text listens for. English alone is the most accurate: Agora's
+ * smart end-of-speech detection only works with a single English locale (with 2+ languages it
+ * falls back to plain silence detection, which chops and merges sentences). So we add at most
+ * ONE extra language, and only if the user chose "I'll also talk to Little Less in …".
  */
-const ASR_CODES: Record<string, string> = { english: 'en-IN', hindi: 'hi-IN', kannada: 'kn-IN', tamil: 'ta-IN', telugu: 'te-IN' };
+const ASR_CODES: Record<string, string> = { hindi: 'hi-IN', kannada: 'kn-IN', tamil: 'ta-IN', telugu: 'te-IN' };
 function asrLanguages() {
-  const p = loadProfile();
-  const names = `${String(p.speaks ?? '')},${String(p.shopkeeper_language ?? '')},hindi`.toLowerCase();
-  const codes = new Set<string>(['en-IN']);
-  for (const [name, code] of Object.entries(ASR_CODES)) if (names.includes(name)) codes.add(code);
-  return [...codes].join(',');
+  const extra = ASR_CODES[String(loadProfile().voice_language ?? '').toLowerCase()];
+  return extra ? `en-IN,${extra}` : 'en-IN';
 }
+
+// Words the speech-to-text should expect (brands, shop words, product names): fewer mishearings.
+const ASR_KEYWORDS = [
+  'Little Less', 'rupees', 'shopkeeper', 'negotiate', 'bargain', 'final price', 'MRP', 'discount', 'online', 'Amazon', 'Flipkart',
+  'Myntra', 'Meesho', 'Ajio', 'boAt', 'Rockerz', 'Airdopes', 'Noise', 'JBL', 'Sony', 'Samsung', 'Redmi', 'Realme', 'OnePlus',
+  'iPhone', 'Nike', 'Adidas', 'Puma', 'Levis', 'Allen Solly', 'Peter England', 'T-shirt', 'kurta', 'jeans', 'sneakers',
+  'earphones', 'earbuds', 'power bank', 'charger', 'protein bar', 'Commercial Street', 'Chickpet', 'Kannada', 'Hindi', 'Tamil', 'Telugu',
+];
 
 export async function startAgent(channel: string) {
   const missing: string[] = [];
@@ -80,6 +88,7 @@ export async function startAgent(channel: string) {
       asr: {
         vendor: 'ares',
         language: asrLanguages(),
+        keywords: ASR_KEYWORDS,
       },
       llm: {
         vendor: 'custom',
@@ -136,18 +145,36 @@ export async function startAgent(channel: string) {
       body: JSON.stringify({ ...body, name: `little-less-${Date.now()}`, properties: { ...body.properties, ...extra } }),
     });
 
-  // Try the richest setup first, then fall back step by step so the call always starts:
-  //   1. multi-language listening + noise settings
-  //   2. multi-language listening only
-  //   3. plain English listening (en-IN)
-  const attempts: object[] = [noiseSettings, {}, { asr: { vendor: 'ares', language: config.asrLanguage || 'en-IN' } }];
+  // Try the richest setup first, then fall back step by step so the call always starts.
+  // SAL (Beta) sometimes fails with a transient 400 "ErrInternal", so it gets 3 tries before we give up on it.
+  const { advanced_features: _a, sal: _s, ...thresholdsOnly } = noiseSettings;
+  // With a recorded voiceprint, SAL locks onto THIS user's voice instead of the first loud voice it hears.
+  const vp = voiceprintUrl();
+  const voiceprintLock = vp ? { ...noiseSettings, sal: { sal_mode: 'locking', sample_urls: { speaker1: vp } } } : null;
+  const attempts: { extra: object; label: string }[] = [
+    ...(voiceprintLock
+      ? [
+          { extra: voiceprintLock, label: 'locked to your voice + noise filter' },
+          { extra: voiceprintLock, label: 'locked to your voice + noise filter' },
+        ]
+      : []),
+    { extra: noiseSettings, label: 'speaker lock + noise filter' },
+    { extra: noiseSettings, label: 'speaker lock + noise filter' },
+    { extra: noiseSettings, label: 'speaker lock + noise filter' },
+    { extra: thresholdsOnly, label: 'noise filter only (speaker lock unavailable)' },
+    { extra: {}, label: 'basic listening (no noise filter)' },
+    { extra: { asr: { vendor: 'ares', language: config.asrLanguage || 'en-IN' } }, label: 'basic English listening' },
+  ];
   let res!: Response;
   let text = '';
-  for (const [i, extra] of attempts.entries()) {
-    res = await join(extra);
+  let mode = '';
+  for (const [i, a] of attempts.entries()) {
+    res = await join(a.extra);
     text = await res.text();
+    mode = a.label;
     if (res.ok || res.status >= 500) break;
     addLog('error', `Agora join attempt ${i + 1} rejected (${res.status}): ${text.slice(0, 200)}`);
+    if (i < attempts.length - 3) await new Promise((r) => setTimeout(r, 400));
   }
   if (!res.ok) {
     addLog('error', `Agora start failed (${res.status}): ${text}`);
@@ -155,7 +182,7 @@ export async function startAgent(channel: string) {
   }
   const data = JSON.parse(text) as { agent_id: string; status: string };
   state.agent = { agentId: data.agent_id, channel };
-  addLog('system', 'Call connected');
+  addLog('system', `Call connected (${mode})`);
   return data;
 }
 

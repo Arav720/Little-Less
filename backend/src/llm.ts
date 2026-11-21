@@ -73,9 +73,29 @@ function flattenToolHistory(messages: Params['messages']): Params['messages'] {
   return out;
 }
 
+// Cool-down: a model that just hit a rate limit or timed out is skipped for a while, instead of
+// making every turn wait for it to fail again (e.g. Groq's daily token quota running out).
+const coolUntil = new Map<string, number>();
+function coolDown(t: Target, err: unknown) {
+  const msg = String((err as Error)?.message ?? '');
+  const status = (err as { status?: number })?.status;
+  let ms = 0;
+  if (status === 429 || /rate limit/i.test(msg)) {
+    const m = msg.match(/try again in (?:(\d+)m)?([\d.]+)s/i);
+    ms = m ? (Number(m[1] ?? 0) * 60 + Number(m[2])) * 1000 : 60_000;
+    ms = Math.min(Math.max(ms, 20_000), 15 * 60_000);
+  } else if (/timed? ?out/i.test(msg) || (status ?? 0) >= 500) {
+    ms = 45_000;
+  }
+  if (ms) coolUntil.set(`${t.label}:${t.model}`, Date.now() + ms);
+}
+
 export async function chat(params: Params, purpose: 'brain' | 'vision' = 'brain') {
-  const targets = purpose === 'vision' ? visionTargets : brainTargets;
-  if (!targets.length) throw new Error('No LLM key set. Add GROQ_API_KEY or LLM_API_KEY to backend/.env');
+  const all = purpose === 'vision' ? visionTargets : brainTargets;
+  if (!all.length) throw new Error('No LLM key set. Add GROQ_API_KEY or LLM_API_KEY to backend/.env');
+  // Skip models in cool-down (but if everything is cooling down, try them all anyway).
+  const ready = all.filter((t) => (coolUntil.get(`${t.label}:${t.model}`) ?? 0) < Date.now());
+  const targets = ready.length ? ready : all;
   let lastErr: unknown;
   for (const t of targets) {
     const started = Date.now();
@@ -89,7 +109,8 @@ export async function chat(params: Params, purpose: 'brain' | 'vision' = 'brain'
       return res;
     } catch (err) {
       lastErr = err;
-      console.warn(`[llm] ${purpose} ${t.model} failed after ${Date.now() - started}ms: ${(err as Error).message.slice(0, 100)}`);
+      coolDown(t, err);
+      console.warn(`[llm] ${purpose} ${t.model} failed after ${Date.now() - started}ms: ${(err as Error).message.slice(0, 400)}`);
     }
   }
   throw lastErr;

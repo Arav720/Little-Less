@@ -2,7 +2,7 @@
 // + price check and verdict maths (plain code, instant).
 // Doing this in one tool instead of 3 separate LLM steps saves several seconds per reply.
 import { fastCompletion } from './llm.js';
-import { findProduct, getProduct, loadProfile, registerWebProduct, type Product } from './data.js';
+import { findProduct, getProduct, loadProfile, profileForPrompt, registerWebProduct, type Product } from './data.js';
 import { searchWebPrices, webSearchEnabled, type WebPrices } from './webprice.js';
 import { state, addStatus, addCard, type Scan, type Verdict } from './state.js';
 
@@ -13,7 +13,8 @@ function visionPrompt(description: string | undefined) {
 ${description ? `The shopper says: "${description}".` : ''}
 Identify the product and judge if it suits THIS shopper.
 ${description ? `IMPORTANT: if the shopper's words name a product (e.g. "tofu block", "these earphones"), THAT is the product, even if the image shows something else (the camera may be pointing at the shopper's own clothes). Use the image only for extra details when it clearly shows that same product. If their words name no product ("check this", "scan now"), identify the product from the image.` : 'Identify the main product being held up or shown in the image.'}
-Shopper profile: ${JSON.stringify(loadProfile())}
+Look closely: read logos, brand marks (e.g. a swoosh = Nike, three stripes = Adidas), labels, model names and pack sizes. Describe ONLY what is actually visible; never guess a product that isn't in the image.
+Shopper profile: ${JSON.stringify(profileForPrompt())}
 
 How to judge fit, by category (use ONLY the parts of the profile that matter for this kind of item; ignore the rest):
 - clothing / accessories: their style, favourite and avoided colours, and their "wardrobe" list.
@@ -95,7 +96,7 @@ function recommendation(p: Product | null, pv: Verdict['price_verdict'], counter
       return 'Fair price. Go ahead.';
     case 'slightly_high':
     case 'overpriced':
-      return `Offer ₹${counter}. Walk away above ₹${p.local_fair[1]}, or order online for ₹${p.online_price}.`;
+      return `Offer ₹${counter}. Walk away above ₹${p.local_fair[1]}; it is about ₹${p.online_price} in stores online.`;
     case 'fixed_mrp':
       return p.healthier_alternative
         ? `Fixed MRP. A better-for-you option is ₹${p.healthier_alternative.online_price} online.`
@@ -106,11 +107,23 @@ function recommendation(p: Product | null, pv: Verdict['price_verdict'], counter
 }
 
 export async function inspectProduct(args: { description?: string; asked_price?: number } = {}) {
-  const frame = state.latestFrame && Date.now() - state.latestFrame.at < FRESH_MS ? state.latestFrame : null;
-  const description = args.description?.trim() || undefined;
+  // Uploaded photos stay valid until replaced; live camera frames must be recent.
+  const lf = state.latestFrame;
+  const frame = lf && (lf.source === 'photo' || Date.now() - lf.at < FRESH_MS) ? lf : null;
+  let description = args.description?.trim() || undefined;
+  // "Yeah, check this photo" names no product. Without an image, guessing from it invents things.
+  const namesNothing = (d: string) =>
+    !d
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/)
+      .some((w) => w.length > 2 && !/^(yeah|yes|okay|can|could|you|please|check|scan|look|see|this|that|these|those|the|photo|picture|image|pic|now|what|whats|showing|show|camera|item|thing|here|for|and|with|tell|about|one|its|hmm|hey|little|less|holding|hold|bro|just|again)$/.test(w));
+  if (description && namesNothing(description)) description = undefined;
   if (!frame && !description) {
-    return { error: 'Camera is off and no description given. Ask the user to show the item or say what it is.' };
+    return { error: 'No image to look at and no product named. Ask the user to show the item (camera or photo) or say what it is.' };
   }
+  if (frame) console.log(`[vision] using ${frame.source ?? 'camera'} image (${Math.round((Date.now() - frame.at) / 1000)}s old)`);
+  else console.log('[vision] no image, identifying from words only');
 
   // 1) One LLM call: identify + personal fit (with image if we have one).
   const content: any[] = [{ type: 'text', text: visionPrompt(description) }];
@@ -171,12 +184,24 @@ export async function inspectProduct(args: { description?: string; asked_price?:
     priceSource = prevProduct.id.startsWith('web-') ? 'web' : 'catalog';
     const prevSources = state.verdict?.sources ?? [];
     web = prevSources.length
-      ? { query: '', offers: prevSources.map((s) => ({ title: '', ...s })), online_low: 0, online_median: prevProduct.online_price, online_high: 0, fair_low: prevProduct.local_fair[0], fair_high: prevProduct.local_fair[1] }
+      ? { query: '', offers: prevSources.map((s) => ({ title: '', ...s })), online_low: 0, online_median: prevProduct.online_price, online_high: 0, fair_low: prevProduct.local_fair[0], fair_high: prevProduct.local_fair[1], pack_deal: state.verdict?.pack_deal ?? null }
       : null;
   } else if (webSearchEnabled()) {
-    const query = withBrand(scan.search_query || scan.item);
+    // Search for ONE piece: drop "value pack / combo / pack of 6" the model may add, unless the user said "pack".
+    const userSaidPack = /\b(pack|combo|box|set|dozen)\b/i.test(description ?? '');
+    const rawQuery = scan.search_query || scan.item;
+    const query = withBrand(
+      userSaidPack ? rawQuery : rawQuery.replace(/\b(value|family|mega|combo|multi)\s*pack\b|\bpack of \d+\b|\bcombo\b|\bbundle\b/gi, '').replace(/\s+/g, ' ').trim() || scan.item,
+    );
     addStatus(`Checking online prices for ${withBrand(scan.item)}…`);
     web = await searchWebPrices(query, Boolean(scan.brand));
+    // Packaged food: online listings are often imported or big packs (₹1,700 "Lay's" vs a ₹50 packet).
+    // If online is wildly above what the shop asks, those listings aren't this packet: don't quote them.
+    const asked = typeof args.asked_price === 'number' ? args.asked_price : null;
+    if (web && scan.category === 'food' && asked && web.online_median > asked * 4) {
+      console.log(`[web] ignoring food listings: online ${web.online_median} vs asked ${asked} (different pack/import)`);
+      web = null;
+    }
     if (web) {
       product = {
         id: `web-${query.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
@@ -229,6 +254,7 @@ export async function inspectProduct(args: { description?: string; asked_price?:
     likely_copy: likelyCopy,
     price_source: priceSource,
     sources: web?.offers.map((o) => ({ source: o.source, price: o.price, link: o.link })) ?? [],
+    pack_deal: web?.pack_deal ?? null,
     at: Date.now(),
   };
   // A new item ends any previous bargaining.
@@ -248,6 +274,8 @@ export async function inspectProduct(args: { description?: string; asked_price?:
     online_price: product?.online_price ?? null,
     online_seller: product?.online_seller ?? null,
     web_offers: web?.offers.map((o) => `${o.source}: ₹${o.price}`) ?? null,
+    // online_price is for ONE piece. A multi-pack is only extra info, never the main price.
+    pack_deal: web?.pack_deal ? `${web.pack_deal.source}: pack of ${web.pack_deal.count} for ₹${web.pack_deal.price} (₹${web.pack_deal.per_unit} each)` : null,
     asked_price: asked,
     fair_local_range: product?.local_fair ?? null,
     price_verdict: pv,

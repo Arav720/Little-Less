@@ -32,6 +32,8 @@ export type Verdict = {
   decision?: { label: string; tone: 'good' | 'warn' | 'bad' | 'neutral' };
   price_source?: 'catalog' | 'web' | 'none';
   sources?: { source: string; price: number; link: string }[];
+  /** Cheapest multi-pack per piece, e.g. pack of 3 for ₹120 (₹40 each). */
+  pack_deal?: { title: string; source: string; link: string; price: number; count: number; per_unit: number } | null;
   at: number;
 };
 
@@ -94,7 +96,8 @@ function freshSession(id: string) {
     id,
     lastSeen: Date.now(),
     profile: null as Record<string, unknown> | null,
-    latestFrame: null as null | { dataUrl: string; at: number },
+    /** Latest image: a live camera frame (fresh for 15 s) or an uploaded photo (kept until replaced/removed). */
+    latestFrame: null as null | { dataUrl: string; at: number; source?: 'camera' | 'photo' },
     lastScan: null as Scan | null,
     verdict: null as Verdict | null,
     lastProductId: null as string | null,
@@ -103,6 +106,8 @@ function freshSession(id: string) {
     orders: [] as Order[],
     feed: [] as FeedEntry[],
     agent: null as null | { agentId: string; channel: string },
+    /** "Noisy room" mode: the user holds a button to talk, so every voice turn is really them. */
+    holdToTalk: false,
     /** The ONE conversation memory, shared by voice and typed chat. */
     history: [] as ChatMsg[],
     bargain: null as Bargain | null,

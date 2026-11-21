@@ -6,7 +6,8 @@ import { state, addLog, publicState, resetShopping, addUser, addAgent, addStatus
 import { userToken, USER_UID, startAgent, stopAgent } from './agora.js';
 import { brainHandler, textChatHandler } from './brain.js';
 import { inspectProduct } from './vision.js';
-import { loadProfile, saveProfile } from './data.js';
+import { loadProfile, saveProfile, resetProfile } from './data.js';
+import { voiceprintStatus, saveVoiceprint, deleteVoiceprint, readVoiceprintFile } from './voiceprint.js';
 
 const app = express();
 app.use(cors());
@@ -42,6 +43,31 @@ app.post('/api/agent/start', async (req, res) => {
   }
 });
 
+// Voiceprint for Agora's speaker lock (see voiceprint.ts).
+app.get('/api/voiceprint', (_req, res) => res.json(voiceprintStatus()));
+app.put('/api/voiceprint', express.raw({ type: 'application/octet-stream', limit: '2mb' }), (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ ok: false, error: 'No audio received.' });
+  const r = saveVoiceprint(req.body);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+app.delete('/api/voiceprint', (_req, res) => {
+  deleteVoiceprint();
+  res.json({ ok: true });
+});
+// Agora downloads the file from here at call start. The name is a random id, not the session id.
+app.get('/api/voiceprint/file/:name', (req, res) => {
+  const pcm = readVoiceprintFile(String(req.params.name).replace(/\.pcm$/, ''));
+  if (!pcm) return res.status(404).end();
+  console.log('[voice] voiceprint downloaded (Agora speaker lock)');
+  res.type('application/octet-stream').send(pcm);
+});
+
+// "Noisy room" (hold-to-talk) on/off, so the brain knows every voice turn is really the user.
+app.post('/api/voice/mode', (req, res) => {
+  state.holdToTalk = Boolean(req.body?.holdToTalk);
+  res.json({ ok: true, holdToTalk: state.holdToTalk });
+});
+
 app.post('/api/agent/stop', async (_req, res) => {
   try {
     res.json(await stopAgent());
@@ -54,7 +80,12 @@ app.post('/api/agent/stop', async (_req, res) => {
 app.post('/api/frame', (req, res) => {
   const image = String(req.body?.image ?? '');
   if (!image.startsWith('data:image/')) return res.status(400).json({ error: 'image must be a data URL' });
-  state.latestFrame = { dataUrl: image, at: Date.now() };
+  state.latestFrame = { dataUrl: image, at: Date.now(), source: req.body?.source === 'photo' ? 'photo' : 'camera' };
+  res.json({ ok: true });
+});
+// Photo removed / camera closed: forget the image so it isn't analysed later by mistake.
+app.post('/api/frame/clear', (_req, res) => {
+  state.latestFrame = null;
   res.json({ ok: true });
 });
 
@@ -86,6 +117,10 @@ app.put('/api/profile', (req, res) => {
   saveProfile(req.body ?? {});
   console.log('[system] profile updated');
   res.json({ ok: true });
+});
+// "Use demo profile" / "Start fresh" in the profile sheet.
+app.post('/api/profile/reset', (req, res) => {
+  res.json(resetProfile(req.body?.kind === 'demo' ? 'demo' : 'blank'));
 });
 app.post('/api/dev/sample', async (_req, res) => {
   // Fills the conversation with a realistic sample (UI rehearsal / screenshots, no AI calls).

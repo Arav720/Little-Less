@@ -79,6 +79,8 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (live) voice.setMicOpen(!holdToTalk);
+    // Tell the brain: in hold-to-talk every voice turn is really the user (skip the background-voice check).
+    api.post('/api/voice/mode', { holdToTalk }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdToTalk, live]);
   useEffect(() => {
@@ -90,7 +92,7 @@ export default function App() {
         voice.setMicOpen(true);
       }
     };
-    const up = (e: KeyboardEvent) => e.code === 'Space' && !typing(e) && voice.setMicOpen(false);
+    const up = (e: KeyboardEvent) => e.code === 'Space' && !typing(e) && voice.setMicOpen(false, 600);
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => {
@@ -107,8 +109,22 @@ export default function App() {
     setSending(false);
   }, []);
 
+  // The photo on screen is what gets analysed: re-send it every 20 s (and before a check), so a
+  // server restart can never leave the AI looking at nothing, or at an older image.
+  useEffect(() => {
+    if (!photo || camera.on) return;
+    const push = () => api.post('/api/frame', { image: photo, source: 'photo' }).catch(() => {});
+    const id = setInterval(push, 20_000);
+    return () => clearInterval(id);
+  }, [photo, camera.on]);
+  // Nothing on screen (photo removed, camera off): make the server forget the old image too.
+  useEffect(() => {
+    if (!photo && !camera.on) api.post('/api/frame/clear').catch(() => {});
+  }, [photo, camera.on]);
+
   async function checkThis() {
     setScanning(true);
+    if (photo && !camera.on) await api.post('/api/frame', { image: photo, source: 'photo' }).catch(() => {});
     await send(photo && !camera.on ? 'Check this photo.' : "Check what I'm showing you on the camera.");
     setScanning(false);
   }
@@ -221,6 +237,7 @@ export default function App() {
               demoProfile={Boolean(profile?.demo)}
               onSuggest={send}
               onOpenProfile={() => setProfileOpen(true)}
+              onUseDemo={() => api.post<Profile>('/api/profile/reset', { kind: 'demo' }).then(setProfile).catch(() => {})}
               negotiating={negotiating}
             />
           </div>

@@ -109,13 +109,22 @@ function syncCard(b: Bargain) {
 
 function summary(b: Bargain, move: 'open' | 'counter' | 'final_offer' | 'accept' | 'deal' | 'walk_away', price: number | null) {
   const noDeal = ' There is NO deal yet: do not say "deal", "okay" or "sari/theek hai" as if agreed.';
+  // The online price is only an argument if it's actually LOWER than what the shop is asking.
+  const firstAsk = b.moves.find((m) => m.who === 'shop')?.price ?? null;
+  const onlineCheaper = b.online_price != null && firstAsk != null && b.online_price < firstAsk;
   const say: Record<typeof move, string> = {
-    open: 'Greet the shopkeeper warmly, say the price is too high, mention the online price, and offer our_offer.' + noDeal,
+    open: onlineCheaper
+      ? 'Greet the shopkeeper warmly, say the price is too high, mention the online price, and offer our_offer.' + noDeal
+      : 'Greet the shopkeeper warmly and offer our_offer. Do NOT mention the online price (it is higher than his, so it is no argument). Use a reason like buying right now, paying cash, or coming back to his shop.' + noDeal,
     counter: 'Acknowledge him, use ONE new reason you have not used yet (regular customer / buying today / paying cash), and offer our_offer.' + noDeal,
-    final_offer: 'Say our_offer is your final price, friendly but firm, and that otherwise you will buy online.' + noDeal,
+    final_offer: onlineCheaper
+      ? 'Say our_offer is your final price, friendly but firm, and that otherwise you will buy online.' + noDeal
+      : 'Say our_offer is your final price, friendly but firm, and that otherwise you will check the next shop.' + noDeal,
     accept: 'Happily accept the shop price and close the deal. Then tell the user (in their language) the deal and how much they saved.',
     deal: 'Close the deal happily. Then tell the user the saving.',
-    walk_away: 'Politely thank him and say you will buy online. Then turn to the user and offer to order it online now.',
+    walk_away: onlineCheaper
+      ? 'Politely thank him and say you will buy it elsewhere. Then tell the user (in their language) where it is cheapest (best store and price) and that they can buy it there.'
+      : 'Politely thank him and say you will look around. Then tell the user his price was still above what you were willing to pay.',
   };
   syncCard(b);
   return {

@@ -16,6 +16,7 @@ export function useVoice() {
   const [youTalking, setYouTalking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [micLevel, setMicLevel] = useState(0);
+  const [agentLevel, setAgentLevel] = useState(0);
   const levelTimer = useRef<number | null>(null);
 
   const cleanup = useCallback(async () => {
@@ -30,7 +31,11 @@ export function useVoice() {
     setYouTalking(false);
   }, []);
 
-  const start = useCallback(async () => {
+  const releaseTimer = useRef<number | null>(null);
+
+  /** startMuted: hold-to-talk mode, so the mic must stay silent until the button is held
+   * (otherwise Agora's speaker lock may latch onto a loud voice in the room while the call connects). */
+  const start = useCallback(async (startMuted = false) => {
     setError(null);
     setStatus('connecting');
     try {
@@ -48,6 +53,7 @@ export function useVoice() {
       await client.join(session.appId, session.channel, session.token, session.uid);
       const mic = await AgoraRTC.createMicrophoneAudioTrack({ AEC: true, ANS: true, AGC: true });
       micRef.current = mic;
+      if (startMuted) mic.setVolume(0);
       await client.publish(mic);
 
       // Live levels (10x per second) for the mic meter and "who is speaking".
@@ -55,12 +61,13 @@ export function useVoice() {
         const you = micRef.current?.enabled ? micRef.current.getVolumeLevel() : 0;
         const agent = Math.max(0, ...client.remoteUsers.map((u) => u.audioTrack?.getVolumeLevel() ?? 0));
         setMicLevel(you);
+        setAgentLevel(agent);
         setYouTalking(you > 0.08);
         setAgentTalking(agent > 0.05);
       }, 100);
 
       await api.post('/api/agent/start', { channel: session.channel });
-      setMuted(false);
+      setMuted(startMuted);
       setStatus('live');
     } catch (err) {
       setError((err as Error).message);
@@ -77,12 +84,22 @@ export function useVoice() {
   }, [cleanup]);
 
   // Muting uses volume 0 (not unpublishing), so unmuting is instant — needed for hold-to-talk.
-  const setMicOpen = useCallback((open: boolean) => {
+  // tailMs: keep the mic open a moment after the button is released so the last word isn't cut off.
+  const setMicOpen = useCallback((open: boolean, tailMs = 0) => {
+    if (releaseTimer.current) window.clearTimeout(releaseTimer.current);
+    releaseTimer.current = null;
+    if (!open && tailMs > 0) {
+      releaseTimer.current = window.setTimeout(() => {
+        micRef.current?.setVolume(0);
+        setMuted(true);
+      }, tailMs);
+      return;
+    }
     micRef.current?.setVolume(open ? 100 : 0);
     setMuted(!open);
   }, []);
 
   const toggleMute = useCallback(() => setMicOpen(muted), [muted, setMicOpen]);
 
-  return { status, start, stop, muted, toggleMute, setMicOpen, agentTalking, youTalking, micLevel, error };
+  return { status, start, stop, muted, toggleMute, setMicOpen, agentTalking, youTalking, micLevel, agentLevel, error };
 }

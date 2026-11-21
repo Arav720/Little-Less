@@ -20,9 +20,10 @@ type Props = {
   negotiating: boolean;
   demoProfile?: boolean;
   onOpenProfile: () => void;
+  onUseDemo?: () => void;
 };
 
-export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onSuggest, onOpenProfile, negotiating, demoProfile }: Props) {
+export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onSuggest, onOpenProfile, onUseDemo, negotiating, demoProfile }: Props) {
   // Only the newest price card shows action buttons.
   const latestVerdictId = [...feed].reverse().find((e) => e.card?.type === 'verdict')?.id;
   const endRef = useRef<HTMLDivElement>(null);
@@ -60,6 +61,11 @@ export function Feed({ feed, thinking, shopLanguage, userName, needsProfile, onS
               <span className="block font-semibold">{demoProfile ? 'Using a demo profile (Arav)' : 'Set up your shopping profile'}</span>
               <span className="block text-sm text-muted">{demoProfile ? 'Make it yours: style, sizes, what you own, goals.' : 'Your style, sizes and goals, so advice fits you. Takes 30 sec.'}</span>
             </span>
+          </button>
+        )}
+        {needsProfile && !demoProfile && onUseDemo && (
+          <button onClick={onUseDemo} className="-mt-2 self-start px-1 text-sm text-muted underline underline-offset-4 hover:text-ink">
+            Just exploring? Try a demo profile
           </button>
         )}
 

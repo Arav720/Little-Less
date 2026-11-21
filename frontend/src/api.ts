@@ -19,6 +19,7 @@ export type Verdict = {
   decision?: { label: string; tone: 'good' | 'warn' | 'bad' | 'neutral' };
   price_source?: 'catalog' | 'web' | 'none';
   sources?: { source: string; price: number; link: string }[];
+  pack_deal?: { title: string; source: string; link: string; price: number; count: number; per_unit: number } | null;
   at: number;
 };
 
@@ -72,19 +73,25 @@ export type Profile = {
   name?: string;
   city?: string;
   speaks?: string;
+  /** Extra language (besides English) the user talks to Little Less in; '' = English only. */
+  voice_language?: string;
   shopkeeper_language?: string;
   clothing?: {
     style?: string;
+    fit?: string;
     favourite_colours?: string[];
     avoid_colours?: string[];
-    sizes?: { tshirt?: string; shoes?: string };
+    sizes?: { tshirt?: string; shirt?: string; jeans_waist?: string; shoes?: string };
     already_owns?: string;
   };
   health_goals?: string[];
+  diet?: string;
   wardrobe?: { item: string; colour: string; count: number }[];
   demo?: boolean;
   tech?: string;
   budget_style?: string;
+  usual_max_spend?: string;
+  notes?: string;
   saved_coupons?: string[];
   onboarded?: boolean;
   [key: string]: unknown;
@@ -126,6 +133,14 @@ export const api = {
   get: <T,>(path: string) => request<T>('GET', path),
   post: <T,>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   put: <T,>(path: string, body: unknown) => request<T>('PUT', path, body),
+  del: <T,>(path: string) => request<T>('DELETE', path),
+  /** Raw binary upload (voice sample). */
+  putBinary: async <T,>(path: string, data: ArrayBuffer): Promise<T> => {
+    const res = await fetch(path, { method: 'PUT', headers: { 'x-session-id': sessionId, 'Content-Type': 'application/octet-stream' }, body: data });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((json as { error?: string }).error ?? `Upload failed (${res.status})`);
+    return json as T;
+  },
 };
 
 export const rupees = (n: number | null | undefined) => (n == null ? '—' : `₹${Math.round(n).toLocaleString('en-IN')}`);

@@ -5,10 +5,16 @@ import type { Request, Response } from 'express';
 import type OpenAI from 'openai';
 import { chat, MODEL } from './llm.js';
 import { toolDefinitions, runTool } from './tools.js';
-import { loadProfile, saveProfile } from './data.js';
+import { loadProfile, saveProfile, profileForPrompt } from './data.js';
 import { state, addUser, addAgent, addFeedError, addStatus } from './state.js';
 
 type Msg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+
+/** Cheapest real store listing for the current item, e.g. "Flipkart at 299 rupees". */
+function bestStore(v: { sources?: { source: string; price: number }[] } | null) {
+  const best = [...(v?.sources ?? [])].filter((s) => s.source && s.price > 0).sort((a, b) => a.price - b.price)[0];
+  return best ? `${best.source} at ${best.price} rupees` : null;
+}
 
 /** What has happened so far (tool results are not in Agora's history, so we restate them every turn). */
 function sessionMemory() {
@@ -26,6 +32,8 @@ function sessionMemory() {
             asked_price: v.asked_price,
             fair_range: v.fair_low != null ? [v.fair_low, v.fair_high] : null,
             online_price: v.online_price,
+            best_store: bestStore(v),
+            pack_deal: v.pack_deal ? `pack of ${v.pack_deal.count} for ${v.pack_deal.price} rupees on ${v.pack_deal.source} (${v.pack_deal.per_unit} each)` : null,
             price_verdict: v.price_verdict,
             counter_offer: v.counter_offer,
             fit: v.fit_verdict,
@@ -62,10 +70,10 @@ const phraseBank = (lang: string) => PHRASES[lang.toLowerCase()] ?? PHRASES.hind
 function systemPrompt() {
   const profile = loadProfile();
   return `You are "Little Less", a friendly, witty voice shopping buddy for Indian street markets and online shopping.
-Your job: stop the user from overpaying, tell them if a product suits THEM, help bargain, and complete the purchase online when that is the better deal.
+Your job: stop the user from overpaying, tell them if a product suits THEM, help bargain, and when a store is the better deal, tell them exactly where it is cheapest (best_store) so they can buy it there.
 
 USER PROFILE:
-${JSON.stringify(profile)}
+${JSON.stringify(profileForPrompt())}
 Use only the part of the profile that matters for the item: style/colours/wardrobe for clothing, health goals for food, budget for everything. Never bring up clothes or T-shirts unless the item is clothing.
 
 SESSION MEMORY (what already happened in this conversation; trust this over guessing):
@@ -96,16 +104,17 @@ There are two modes. You start in SUGGEST mode; NEGOTIATE mode begins only when 
    - Mix tactics across rounds instead of repeating yourself: friendly greeting, "too much", online price, regular customer, buying today/paying cash, final offer, polite walk-away.
    - Phrase ideas (adapt the numbers): ${phraseBank(String(profile.shopkeeper_language ?? "Hindi"))}
    - On a deal: one happy line to the shopkeeper, then one line to the user in English with how much they saved versus his first price.
-   - On walk_away: one polite line to the shopkeeper, then ask the user in English if you should order it online now.
-5. If the shop will not come down, or it is a fixed MRP item with a better or healthier option online, offer to order online. Use add_to_cart with current_item's product_id (it applies their saved coupon automatically), then tell the total and ASK for confirmation. Only call checkout with confirmed=true after a clear yes.
-6. After ordering: give order id, delivery time, and offer tracking. Help with tracking and returns if asked.
+   - On walk_away: one polite line to the shopkeeper, then tell the user in English where it is cheapest (best_store) and that they can buy it there; the link is on the card.
+5. If the shop will not come down, or a store is cheaper: say "The best price is on <best_store store> at <price> rupees, you can buy it from there" (the card has the link). Do NOT say "order online" and do NOT offer to place an order yourself.
+6. Only if the user clearly asks YOU to order it for them ("order it", "buy it for me"): use add_to_cart with current_item's product_id, tell the total and ASK for confirmation. Only call checkout with confirmed=true after a clear yes. After ordering: give order id and delivery time.
 
 RULES
 - Never invent prices. If price_source is "web", mention it is the live online price and where (online_seller, e.g. "about 1,299 on Amazon"). If price_source is "none", say any number is only your estimate.
 - Short replies like "yes", "ok", "haan" answer YOUR last question: if you just asked to confirm an order, call checkout with confirmed=true.
 - If inspect_product returns an error, ask the user to show the item or say what it is.
-- If the asked price is higher than online_price, say clearly that online is cheaper (never call it a good deal).
-- If likely_fake_or_copy is true, do NOT call it a great deal: say it is too cheap to be genuine and is probably a copy, and offer the original online.
+- If the asked price is higher than online_price, say clearly where it is cheaper (best_store), never call it a good deal.
+- Prices are always for ONE piece (online_price, best_store). If pack_deal is set, you may add it as an extra tip after the single price, e.g. "or a pack of 3 is 120 rupees, 40 each". Never quote a pack price as the price of one.
+- If likely_fake_or_copy is true, do NOT call it a great deal: say it is too cheap to be genuine and is probably a copy, and say where to buy the original (best_store).
 - Keep replies fast: call tools only when needed, and call independent tools together in one step.
 - Always ask before any purchase. Handle errors gracefully.`;
 }
@@ -237,7 +246,13 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
     },
   ];
   let saidFiller = false;
-  const forcePriceCheck = isNewPriceQuote(lastUser);
+  // A bare number ("20000", "1.5k", "₹800") right after we asked "How much is he asking?" IS the shop's price.
+  const bareNumber = lastUser.replace(/,/g, '').match(/^\D{0,25}?(\d+(?:\.\d+)?)\s*(k|thousand|हज़ार|हजार)?\D{0,25}$/i);
+  const answeredPrice =
+    state.verdict && state.verdict.asked_price == null && !(state.bargain && ['negotiating', 'final_offer'].includes(state.bargain.status)) && bareNumber
+      ? Math.round(Number(bareNumber[1]) * (bareNumber[2] ? 1000 : 1))
+      : null;
+  const forcePriceCheck = isNewPriceQuote(lastUser) || (answeredPrice != null && answeredPrice >= 10);
   let emptyRetries = 0;
   let wrongLangRetries = 0;
   let bargainMove: string | null = null;
@@ -266,7 +281,10 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
   const liveBargain =
     state.bargain && state.verdict && state.bargain.item === state.verdict.item && ['negotiating', 'final_offer'].includes(state.bargain.status);
   if (asksToBargain || (liveBargain && relaysShop)) allowed.add('bargain_step');
-  if (/order|buy|online|cart|bag|add|purchase|checkout|check out|book|yes|yeah|haan|sure|ok|okay|go ahead|confirm|place/.test(t)) {
+  // "Yeah" / "ok" only means "buy it" when our last message actually offered to buy or place the order.
+  const lastAgent = String([...history].reverse().find((m) => m.role === 'assistant')?.content ?? '').toLowerCase();
+  const offeredToBuy = /order|buy it|purchase|add it|place it|shall i|should i get|want me to get/.test(lastAgent);
+  if (/\b(order|buy|purchase|cart|checkout|check out|place (it|the order))\b/.test(t) || (offeredToBuy && /\b(yes|yeah|haan|sure|ok|okay|go ahead|confirm|do it)\b|हाँ|हां/.test(t))) {
     allowed.add('add_to_cart');
     allowed.add('checkout');
   }
@@ -301,10 +319,10 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
   }
 
   for (let step = 0; step < 5; step++) {
-    const available = toolDefinitions.filter(
-      (d) => d.type === 'function' && !used.has(d.function.name) && allowed.has(d.function.name),
-    );
-    const mustAnswer = step >= 3 || available.length === 0;
+    // Every unused tool is OFFERED (Groq rejects the whole request if the model calls a tool that
+    // isn't in the list), but only the ALLOWED ones actually run; others are dropped below.
+    const available = toolDefinitions.filter((d) => d.type === 'function' && !used.has(d.function.name));
+    const mustAnswer = step >= 3 || ![...allowed].some((n) => !used.has(n));
     const toolChoice =
       step === 0 && forcePriceCheck ? ({ type: 'function', function: { name: 'inspect_product' } } as const) : 'auto';
     const res = mustAnswer
@@ -315,12 +333,22 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
 
     // Ignore repeat calls to a tool that already ran this turn (and duplicates within one step).
     const seenNow = new Set<string>();
+    const blocked: string[] = [];
     const toolCalls = ((msg.tool_calls ?? []) as any[]).filter((c) => {
       if (c.type !== 'function' || used.has(c.function.name) || seenNow.has(c.function.name)) return false;
+      if (!allowed.has(c.function.name)) {
+        blocked.push(c.function.name);
+        return false;
+      }
       seenNow.add(c.function.name);
       return true;
     });
-    if (!toolCalls.length && (msg.tool_calls?.length ?? 0) > 0 && !msg.content) continue; // only repeats: ask again
+    if (!toolCalls.length && (msg.tool_calls?.length ?? 0) > 0 && !msg.content) {
+      // Only repeats / tools the user didn't ask for: tell the model to just answer.
+      if (blocked.length) messages.push({ role: 'system', content: `Don't use ${blocked.join(', ')} now (the user didn't ask for that). Reply to the user directly.` });
+      blocked.forEach((n) => used.add(n));
+      continue;
+    }
     if (!toolCalls.length) {
       const text = cleanSpoken(msg.content ?? '');
       if (text) {
@@ -386,6 +414,13 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
       } catch {
         /* keep empty */
       }
+      if (answeredPrice != null) {
+        // "20000" answers our question about the CURRENT item: keep the item, set the price.
+        a.asked_price = answeredPrice;
+        if (!a.description || /^\D*\d[\d,.]*\D*$/.test(String(a.description))) a.description = state.verdict?.item ?? '';
+      }
+      if (typeof a.asked_price === 'string') a.asked_price = Number(String(a.asked_price).replace(/[^\d.]/g, '')) || undefined;
+      if (a.asked_price === null) delete a.asked_price;
       if (!a.description && lastUser) a.description = lastUser;
       call.function.arguments = JSON.stringify(a);
     }
@@ -438,12 +473,58 @@ function cartTotalNow() {
  * One conversation turn, used by BOTH voice and typed chat so they share one memory.
  * Returns the reply text (already added to the feed and to history).
  */
+// ---- Voice gate: in a noisy hall the mic also hears announcers and other people. ----
+// Clearly-for-us speech goes straight through; unclear speech gets a quick AI check; background is ignored.
+const FOR_ME =
+  /\d|₹|\b(rs|rupees?|price|cost|asking|asks|buy|purchase|order|cart|check (this|it|that)|scan|look at (this|it)|see (this|these)|negotiat\w*|bargain\w*|cheap|expensive|discount|shopkeeper|seller|size|colou?r|brand|online|amazon|flipkart|worth it|skip it|return it|track|little less|he agreed|he refused|stop negotiating|hindi|kannada|tamil|telugu|protein)\b/i;
+// Words an announcer / speaker uses: never let these skip the AI check.
+const STAGE_TALK = /\b(everyone|everybody|guys|folks|audience|participants|mentors?|judges?|teams?|hackathon|stage|session|speaker|welcome|round of applause|lunch|break|registration|submission|minutes left)\b/i;
+let lastIgnoredNote = 0;
+const FOR_ME_NATIVE = /(दाम|कीमत|रुपय|रुपये|खरीद|ऑर्डर|बात कर|बोल|कितन|हाँ|हां|नहीं|ठीक|रुको|ಬೆಲೆ|ರೂಪಾಯಿ|ಹೌದು|ಬೇಡ|விலை|ரூபாய்|ஆமா|வேண்டாம்|ధర|రూపాయ)/;
+
+async function isForAssistant(text: string): Promise<boolean> {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!STAGE_TALK.test(text) && (words.length <= 4 || FOR_ME.test(text) || FOR_ME_NATIVE.test(text))) return true;
+  const lastReply = [...state.history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+  const prompt =
+    `A shopping voice assistant ("Little Less") is listening through a phone mic in a noisy public place. ` +
+    `The mic also picks up announcers, speeches and nearby people. Decide if this transcript is the USER talking to the assistant ` +
+    `(about shopping, prices, an item, the shopkeeper, or replying to the assistant), or BACKGROUND speech not meant for it.\n` +
+    `Assistant's last line: "${String(lastReply).slice(0, 200)}"\nTranscript: "${text.slice(0, 300)}"\nAnswer with exactly one word: USER or BACKGROUND.`;
+  try {
+    const res = await Promise.race([
+      chat({ messages: [{ role: 'user', content: prompt }], max_tokens: 400 }),
+      new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+    ]);
+    const verdict = String(res?.choices[0]?.message?.content ?? '').toUpperCase();
+    // When unsure (timeout / odd answer), answer rather than ignore the user.
+    return !verdict.includes('BACKGROUND');
+  } catch {
+    return true;
+  }
+}
+
 async function converse(text: string, via: 'voice' | 'text', onFiller?: (t: string) => void) {
   // Agora sometimes re-sends the same sentence (even while we are still answering it).
   // Answer it once: duplicates get the same reply instead of a new one.
   const norm = (x: string) => x.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
   const lt = state.lastTurn;
   if (norm(text) && norm(text) === norm(lt.text) && Date.now() - lt.at < 20_000) return lt.promise ?? lt.reply;
+  // If the user talks over a reply, Agora sends "<previous sentence> <new sentence>": keep only the new part.
+  if (via === 'voice' && lt.text && Date.now() - lt.at < 60_000 && norm(text).startsWith(norm(lt.text) + ' ')) {
+    const prevWords = norm(lt.text).split(' ').length;
+    text = text.trim().split(/\s+/).slice(prevWords).join(' ');
+  }
+  // Hold-to-talk: the user pressed the button, so it's definitely them; skip the background check.
+  if (via === 'voice' && !state.holdToTalk && !(await isForAssistant(text))) {
+    console.log(`[voice] ignored background speech: ${text}`);
+    if (Date.now() - lastIgnoredNote > 20_000) {
+      lastIgnoredNote = Date.now();
+      addStatus(`Ignored background voice: “${text.length > 60 ? text.slice(0, 57) + '…' : text}”`);
+    }
+    state.lastTurn = { text, at: Date.now(), reply: '', promise: null };
+    return '';
+  }
   const turn = { text, at: Date.now(), reply: '', promise: null as Promise<string> | null };
   state.lastTurn = turn;
   turn.promise = answer(text, via, onFiller).then((r) => (turn.reply = r));

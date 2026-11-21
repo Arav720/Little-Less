@@ -29,8 +29,8 @@ export function loadCatalog(): Catalog {
 }
 
 // Each user (browser session) has their own profile, saved to data/profiles/<session>.json
-// so it survives server restarts. New users start from the demo profile in data/profile.json
-// (so personalised advice works immediately in a demo); anyone can edit it to their own.
+// so it survives server restarts. New users start with a BLANK profile (advice falls back to
+// common sense); they can fill it in, or load the demo profile from data/profile.json.
 const profilesDir = path.join(dataDir, 'profiles');
 mkdirSync(profilesDir, { recursive: true });
 
@@ -39,33 +39,79 @@ const BASE_PROFILE: Record<string, unknown> = {
   city: 'Bengaluru',
   speaks: 'English',
   shopkeeper_language: 'Kannada',
-  clothing: { style: '', favourite_colours: [], avoid_colours: [], sizes: {}, already_owns: '' },
+  clothing: { style: '', fit: '', favourite_colours: [], avoid_colours: [], sizes: {}, already_owns: '' },
   wardrobe: [],
   health_goals: [],
+  diet: '',
   budget_style: 'Balanced: Good value for money',
+  usual_max_spend: '',
+  tech: '',
+  notes: '',
   saved_coupons: ['LITTLE10'],
   onboarded: false,
 };
-const DEFAULT_PROFILE: Record<string, unknown> = (() => {
+const DEMO_PROFILE: Record<string, unknown> = (() => {
   try {
-    return { ...BASE_PROFILE, ...JSON.parse(readFileSync(file('profile.json'), 'utf8')) };
+    return { ...BASE_PROFILE, ...JSON.parse(readFileSync(file('profile.json'), 'utf8')), demo: true, onboarded: true };
   } catch {
-    return BASE_PROFILE;
+    return { ...BASE_PROFILE };
   }
 })();
+
+function persist(id: string, profile: Record<string, unknown>) {
+  if (id !== 'default') writeFileSync(path.join(profilesDir, `${id}.json`), JSON.stringify(profile, null, 2));
+}
 
 export function loadProfile(): Record<string, unknown> {
   const s = current();
   if (s.profile) return s.profile;
   const f = path.join(profilesDir, `${s.id}.json`);
-  s.profile = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : structuredClone(DEFAULT_PROFILE);
+  s.profile = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : structuredClone(BASE_PROFILE);
   return s.profile!;
 }
 
-export function saveProfile(profile: Record<string, unknown>) {
+// The voiceprint belongs to the person, not to the profile form: keep it across saves and resets.
+const voiceFields = () => {
+  const p = loadProfile();
+  return p.voiceprint_id ? { voiceprint_id: p.voiceprint_id, voiceprint_seconds: p.voiceprint_seconds } : {};
+};
+
+export function saveProfile(profile: Record<string, unknown>, opts: { keepVoiceprint?: boolean } = {}) {
   const s = current();
-  s.profile = { ...BASE_PROFILE, ...profile, demo: false };
-  if (s.id !== 'default') writeFileSync(path.join(profilesDir, `${s.id}.json`), JSON.stringify(s.profile, null, 2));
+  const keep = opts.keepVoiceprint === false ? {} : voiceFields();
+  s.profile = { ...BASE_PROFILE, ...profile, ...keep, demo: false };
+  persist(s.id, s.profile);
+}
+
+/** App-side change (voiceprint) that isn't the user editing their profile: keeps demo/onboarded as they are. */
+export function patchProfile(patch: Record<string, unknown>, remove: string[] = []) {
+  const s = current();
+  const next: Record<string, unknown> = { ...loadProfile(), ...patch };
+  for (const k of remove) delete next[k];
+  s.profile = next;
+  persist(s.id, next);
+}
+
+/** "Use demo profile" / "Start fresh" buttons. */
+export function resetProfile(kind: 'demo' | 'blank') {
+  const s = current();
+  s.profile = { ...structuredClone(kind === 'demo' ? DEMO_PROFILE : BASE_PROFILE), ...voiceFields() };
+  persist(s.id, s.profile);
+  return s.profile;
+}
+
+/** The profile as the AI sees it: only filled-in fields, no app bookkeeping. */
+export function profileForPrompt(): Record<string, unknown> {
+  const { onboarded, demo, saved_coupons, voiceprint_id, voiceprint_seconds, ...rest } = loadProfile();
+  const clean = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.length ? v : undefined;
+    if (v && typeof v === 'object') {
+      const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clean(x)]).filter(([, x]) => x !== undefined));
+      return Object.keys(o).length ? o : undefined;
+    }
+    return v === '' || v == null ? undefined : v;
+  };
+  return (clean(rest) as Record<string, unknown>) ?? {};
 }
 
 /** Very simple keyword search: the product whose keywords appear most in the query wins. */
