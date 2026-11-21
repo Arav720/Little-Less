@@ -188,7 +188,7 @@ function cleanSpoken(text: string) {
     .replace(/\s+/g, ' ')
     .replace(/\s+([.,!?।])/g, '$1') // removing "(Amazon)" can leave "online ." → "online."
     .replace(/\b(?:Fit|Style|Fit & Style|Fit and Style|Price|Size|Health|Quality) (?:Note|Tip|Check)s?:\s*/g, '') // "Fit & Style Note:" labels
-    .replace(/(^|[.!?]\s+)(?:[A-Z][\w&']*\s){0,2}[A-Z][\w&']*:\s+/g, '$1') // "Best Size: …", "Online Price: …" at sentence start
+    .replace(/(^|[.!?]\s+)((?:[A-Z][\w&']*\s){0,3}[A-Za-z][\w&']*):\s+/g, (_m, pre, label) => `${pre}${label} is `) // "Online Price: ₹775" → "Online Price is ₹775"
     .trim();
   // Split on . ! ? and the Hindi full stop । (works for every script).
   const sentences = flat.match(/[^.!?।]+[.!?।]+|[^.!?।]+$/g) ?? [flat];
@@ -377,12 +377,16 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
         const toShopkeeper = bargainMove === 'open' || bargainMove === 'counter' || bargainMove === 'final_offer';
         // A line for the shopkeeper written in English (no Indian script at all): ask once more, explicitly.
         const shopLangForLine = String(loadProfile().shopkeeper_language ?? 'Hindi');
-        if (toShopkeeper && shopLangForLine !== 'English' && !INDIC.test(text) && wrongLangRetries++ < 1) {
-          messages.push({
-            role: 'system',
-            content: `That line is for the SHOPKEEPER: rewrite it entirely in ${shopLangForLine}, written in ${shopLangForLine} script, 1-2 short lines, and offer ${bargainOffer ?? 'our_offer'}. No English.`,
-          });
-          continue;
+        if (toShopkeeper && shopLangForLine !== 'English' && !INDIC.test(text)) {
+          if (wrongLangRetries++ < 1) {
+            messages.push({
+              role: 'system',
+              content: `That line is for the SHOPKEEPER: rewrite it entirely in ${shopLangForLine}, written in ${shopLangForLine} script, 1-2 short lines, and offer ${bargainOffer ?? 'our_offer'}. No English.`,
+            });
+            continue;
+          }
+          // Still English: use the ready-made line in his language rather than haggle in the wrong one.
+          if (bargainOffer) return { text: offerLine(shopLangForLine, bargainOffer, bargainMove === 'final_offer'), toShopkeeper };
         }
         // A negotiation line MUST contain our offer; if the AI forgot it, add it in the shopkeeper's language.
         if (toShopkeeper && bargainOffer && !text.replace(/[,\s]/g, '').includes(String(bargainOffer))) {
