@@ -68,7 +68,15 @@ app.post('/api/scan', async (_req, res) => {
 });
 
 // 4. The brain: Agora's agent calls this; the app's text box calls /api/chat.
-app.post('/api/brain/chat/completions', brainHandler);
+// Only Agora knows BRAIN_SECRET (we hand it over as llm.api_key, sent back as "Bearer <secret>"),
+// so strangers who find the public URL can't burn our LLM quota through this endpoint.
+const requireBrainSecret: express.RequestHandler = (req, res, next) => {
+  const auth = req.header('authorization') ?? '';
+  if (auth === `Bearer ${config.brainSecret}`) return next();
+  console.warn(`[brain] rejected call: ${auth ? `wrong ${auth.split(' ')[0]} credential` : 'no Authorization header'}`);
+  res.status(401).json({ error: { message: 'Unauthorized', type: 'invalid_api_key' } });
+};
+app.post('/api/brain/chat/completions', requireBrainSecret, brainHandler);
 app.post('/api/chat', textChatHandler);
 
 // 5. UI state, profile, reset.
