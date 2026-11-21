@@ -89,6 +89,7 @@ export default function App() {
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat && !typing(e)) {
         e.preventDefault();
+        voice.stopAgentSpeech(); // holding Space to talk = interrupt (no-op if it's quiet)
         voice.setMicOpen(true);
       }
     };

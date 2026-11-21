@@ -32,6 +32,18 @@ export function useVoice() {
   }, []);
 
   const releaseTimer = useRef<number | null>(null);
+  const silenced = useRef(false);
+  const quietSince = useRef(0);
+
+  /** Tap-to-interrupt: silence Little Less's current reply right now (works even in a loud room). */
+  const stopAgentSpeech = useCallback(() => {
+    const client = clientRef.current;
+    if (!client) return;
+    silenced.current = true;
+    quietSince.current = 0;
+    client.remoteUsers.forEach((u) => u.audioTrack?.setVolume(0));
+    setAgentTalking(false);
+  }, []);
 
   /** startMuted: hold-to-talk mode, so the mic must stay silent until the button is held
    * (otherwise Agora's speaker lock may latch onto a loud voice in the room while the call connects). */
@@ -60,10 +72,20 @@ export function useVoice() {
       levelTimer.current = window.setInterval(() => {
         const you = micRef.current?.enabled ? micRef.current.getVolumeLevel() : 0;
         const agent = Math.max(0, ...client.remoteUsers.map((u) => u.audioTrack?.getVolumeLevel() ?? 0));
+        // After "Stop": keep the agent silent until its current reply has finished (~1 s of quiet), then un-mute.
+        if (silenced.current) {
+          if (agent < 0.02) {
+            quietSince.current ||= Date.now();
+            if (Date.now() - quietSince.current > 1000) {
+              silenced.current = false;
+              client.remoteUsers.forEach((u) => u.audioTrack?.setVolume(100));
+            }
+          } else quietSince.current = 0;
+        }
         setMicLevel(you);
         setAgentLevel(agent);
         setYouTalking(you > 0.08);
-        setAgentTalking(agent > 0.05);
+        setAgentTalking(agent > 0.05 && !silenced.current);
       }, 100);
 
       await api.post('/api/agent/start', { channel: session.channel });
@@ -101,5 +123,5 @@ export function useVoice() {
 
   const toggleMute = useCallback(() => setMicOpen(muted), [muted, setMicOpen]);
 
-  return { status, start, stop, muted, toggleMute, setMicOpen, agentTalking, youTalking, micLevel, agentLevel, error };
+  return { status, start, stop, muted, toggleMute, setMicOpen, stopAgentSpeech, agentTalking, youTalking, micLevel, agentLevel, error };
 }

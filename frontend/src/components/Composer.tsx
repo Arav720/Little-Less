@@ -178,6 +178,15 @@ export function Composer({ voice, cameraOn, onToggleCamera, onSend, sending, hol
             tone={phase === 'speaking' ? 'agent' : phase === 'hearing' ? 'you' : 'idle'}
           />
         )}
+        {phase === 'speaking' && (
+          <button
+            onClick={voice.stopAgentSpeech}
+            className="shrink-0 rounded-full bg-paper px-2.5 py-1 text-[11px] font-bold text-ink"
+            aria-label="Stop Little Less talking"
+          >
+            Stop
+          </button>
+        )}
         <button
           onClick={() => setHoldToTalk(!holdToTalk)}
           className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
@@ -196,7 +205,10 @@ export function Composer({ voice, cameraOn, onToggleCamera, onSend, sending, hol
         {cameraBtn}
         {holdToTalk ? (
           <button
-            onPointerDown={() => voice.setMicOpen(true)}
+            onPointerDown={() => {
+              if (voice.agentTalking) voice.stopAgentSpeech(); // pressing to talk = interrupt
+              voice.setMicOpen(true);
+            }}
             onPointerUp={() => voice.setMicOpen(false, 600)}
             onPointerLeave={() => !voice.muted && voice.setMicOpen(false, 600)}
             onPointerCancel={() => voice.setMicOpen(false, 600)}

@@ -127,10 +127,12 @@ export async function startAgent(channel: string) {
     turn_detection: {
       mode: 'default',
       config: {
-        speech_threshold: 0.65,
+        // Balanced: filters weak background sound, but a normal voice can still cut the agent off
+        // (0.65 / 480 ms made interrupting feel broken; Agora's defaults are 0.5 / 160 ms).
+        speech_threshold: 0.55,
         start_of_speech: {
           mode: 'vad',
-          vad_config: { interrupt_duration_ms: 400, speaking_interrupt_duration_ms: 480, prefix_padding_ms: 800 },
+          vad_config: { interrupt_duration_ms: 300, speaking_interrupt_duration_ms: 250, prefix_padding_ms: 800 },
         },
         end_of_speech: { mode: 'vad', vad_config: { silence_duration_ms: 700 } },
       },
