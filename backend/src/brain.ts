@@ -170,13 +170,22 @@ function cleanSpoken(text: string) {
   const flat = text
     .split('\n')
     .filter((line) => !/^\s*\[?\s*(I called:|inspect_product|bargain_step|add_to_cart|apply_coupon|view_cart|checkout|track_order|start_return)\b/.test(line))
+    // List items ("- Online price: 999") become spoken sentences.
+    .map((line) => {
+      const l = line.replace(/^\s*(?:[-•–]|\d+[.)])\s+/, '').trim();
+      return l && !/[.!?।:]$/.test(l) && l !== line.trim() ? `${l}.` : l;
+    })
     .join(' ')
+    .replace(/\s+[-•–]\s+(?=\p{Lu})/gu, '. ') // inline bullets: "sneakers. - Fair price" → "sneakers. Fair price"
+    .replace(/\s+([.,!?।])/g, '$1') // "sneakers ." → "sneakers."
+    .replace(/([.!?।])\s*\./g, '$1')
     .replace(/^\s*\((to the shopkeeper|to shopkeeper|shopkeeper)\)\s*/i, '') // leaked internal label
     .replace(/\([^)]*\)/g, '') // stage notes / translations in brackets are never spoken
     .replace(/["“”]/g, '')
     .replace(/[*#_`]+/g, '') // markdown would be read aloud
     .replace(/([.!?।])(?=\S)/g, '$1 ') // "today?Just" → "today? Just"
     .replace(/\s+/g, ' ')
+    .replace(/\s+([.,!?।])/g, '$1') // removing "(Amazon)" can leave "online ." → "online."
     .trim();
   // Split on . ! ? and the Hindi full stop । (works for every script).
   const sentences = flat.match(/[^.!?।]+[.!?।]+|[^.!?।]+$/g) ?? [flat];
@@ -363,11 +372,29 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
         }
         // Pure negotiation lines (open / counter / final offer) are spoken to the shopkeeper.
         const toShopkeeper = bargainMove === 'open' || bargainMove === 'counter' || bargainMove === 'final_offer';
+        // A line for the shopkeeper written in English (no Indian script at all): ask once more, explicitly.
+        const shopLangForLine = String(loadProfile().shopkeeper_language ?? 'Hindi');
+        if (toShopkeeper && shopLangForLine !== 'English' && !INDIC.test(text) && wrongLangRetries++ < 1) {
+          messages.push({
+            role: 'system',
+            content: `That line is for the SHOPKEEPER: rewrite it entirely in ${shopLangForLine}, written in ${shopLangForLine} script, 1-2 short lines, and offer ${bargainOffer ?? 'our_offer'}. No English.`,
+          });
+          continue;
+        }
         // A negotiation line MUST contain our offer; if the AI forgot it, add it in the shopkeeper's language.
         if (toShopkeeper && bargainOffer && !text.replace(/[,\s]/g, '').includes(String(bargainOffer))) {
           return { text: `${text} ${offerLine(String(loadProfile().shopkeeper_language ?? 'Hindi'), bargainOffer, bargainMove === 'final_offer')}`, toShopkeeper };
         }
-        if (toShopkeeper) return { text, toShopkeeper };
+        if (toShopkeeper) {
+          // A line for the shopkeeper is ONLY in his language: drop English asides like "Let's counter with 940."
+          const shopLangNow = String(loadProfile().shopkeeper_language ?? 'Hindi');
+          if (shopLangNow !== 'English' && INDIC.test(text)) {
+            const parts = text.match(/[^.!?।]+[.!?।]*/g)?.map((s) => s.trim()).filter(Boolean) ?? [text];
+            const native = parts.filter((s) => INDIC.test(s)).join(' ');
+            if (native) return { text: native, toShopkeeper };
+          }
+          return { text, toShopkeeper };
+        }
 
         // Talking to the USER: sentences in a script the user didn't speak are lines meant for the
         // shopkeeper. On a deal / walk-away they become their own "to the shopkeeper" bubble;
@@ -418,6 +445,12 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
         // "20000" answers our question about the CURRENT item: keep the item, set the price.
         a.asked_price = answeredPrice;
         if (!a.description || /^\D*\d[\d,.]*\D*$/.test(String(a.description))) a.description = state.verdict?.item ?? '';
+      } else if (a.description) {
+        // The model must not INVENT what the product is ("Check this photo" → "handbag"): the scanner
+        // trusts the description over the image. Keep it only if it shares a word with what the user said.
+        const sig = (x: string) => x.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2);
+        const userWords = new Set(sig(lastUser));
+        if (!sig(String(a.description)).some((w) => userWords.has(w))) a.description = lastUser;
       }
       if (typeof a.asked_price === 'string') a.asked_price = Number(String(a.asked_price).replace(/[^\d.]/g, '')) || undefined;
       if (a.asked_price === null) delete a.asked_price;

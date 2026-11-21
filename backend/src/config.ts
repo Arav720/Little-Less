@@ -26,6 +26,8 @@ export const config = {
     model: env('LLM_MODEL', 'gemini-3.1-flash-lite'),
     // Used once if the main model times out / errors. Empty = retry the same model.
     fallbackModel: env('LLM_FALLBACK_MODEL'),
+    // Product scanning: the full Flash model reads labels, logos and model numbers best.
+    visionModel: env('LLM_VISION_MODEL', 'gemini-3.5-flash'),
     timeoutMs: Number(env('LLM_TIMEOUT_MS', '5000')),
   },
   // Groq: very fast. Each model has its own free rate limit, so we list several and

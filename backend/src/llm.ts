@@ -5,7 +5,7 @@
 import OpenAI from 'openai';
 import { config } from './config.js';
 
-type Target = { label: string; client: OpenAI; model: string; extra: Record<string, unknown> };
+type Target = { label: string; client: OpenAI; model: string; extra: Record<string, unknown>; timeoutMs?: number };
 
 const gemini = config.llm.apiKey
   ? new OpenAI({ apiKey: config.llm.apiKey, baseURL: config.llm.baseUrl, maxRetries: 0 })
@@ -16,14 +16,24 @@ const groq = config.groq.apiKey
 
 const isGoogle = config.llm.baseUrl.includes('googleapis');
 
+/**
+ * "Thinking" adds seconds, so keep it as low as each model allows (measured):
+ *  - full Flash (3.5+): "minimal" (~1.4 s with a photo; default thinking ~3 s)
+ *  - 3.1 Flash-Lite: "none"
+ *  - 3.5 Flash-Lite: rejects the setting, so send nothing.
+ */
+function thinkingFor(model: string): Record<string, unknown> {
+  if (!isGoogle) return {};
+  if (/flash-lite/.test(model)) return /3\.1/.test(model) ? { reasoning_effort: 'none' } : {};
+  if (/flash/.test(model)) return { reasoning_effort: 'minimal' };
+  return {};
+}
+
 function geminiTargets(): Target[] {
   if (!gemini) return [];
-  const list: Target[] = [
-    // "Thinking" adds latency; the main Gemini model accepts turning it off.
-    { label: 'gemini', client: gemini, model: config.llm.model, extra: isGoogle ? { reasoning_effort: 'none' } : {} },
-  ];
+  const list: Target[] = [{ label: 'gemini', client: gemini, model: config.llm.model, extra: thinkingFor(config.llm.model) }];
   if (config.llm.fallbackModel && config.llm.fallbackModel !== config.llm.model) {
-    list.push({ label: 'gemini', client: gemini, model: config.llm.fallbackModel, extra: {} });
+    list.push({ label: 'gemini', client: gemini, model: config.llm.fallbackModel, extra: thinkingFor(config.llm.fallbackModel) });
   }
   return list;
 }
@@ -47,7 +57,14 @@ const brainTargets = [
   ...geminiTargets(),
   ...groqTargets(otherGroq),
 ];
-const visionTargets = [...groqTargets(config.groq.visionModels), ...geminiTargets()];
+// Vision: Gemini first. It reads labels, logos and model numbers better than the Groq vision
+// model (about 1 s slower). Groq stays as the backup if Gemini is slow, busy or rate-limited.
+// The image call gets more time (8 s): a photo plus a careful read is slower than a chat reply.
+const visionTargets = [
+  ...(gemini && config.llm.visionModel ? [{ label: 'gemini', client: gemini, model: config.llm.visionModel, extra: thinkingFor(config.llm.visionModel), timeoutMs: 8000 } as Target] : []),
+  ...geminiTargets(),
+  ...groqTargets(config.groq.visionModels),
+];
 
 export const MODEL = brainTargets[0]?.model ?? config.llm.model;
 
@@ -103,17 +120,59 @@ export async function chat(params: Params, purpose: 'brain' | 'vision' = 'brain'
       const messages = t.label === 'gemini' ? flattenToolHistory(params.messages) : params.messages;
       const res = await t.client.chat.completions.create(
         { ...t.extra, ...params, messages, model: t.model },
-        { timeout: config.llm.timeoutMs },
+        { timeout: t.timeoutMs ?? config.llm.timeoutMs },
       );
       console.log(`[llm] ${purpose} ${t.model} ${Date.now() - started}ms (${res.usage?.prompt_tokens ?? '?'} in / ${res.usage?.completion_tokens ?? '?'} out tokens)`);
       return res;
     } catch (err) {
+      // Groq rejects a tool call whose arguments break the schema (e.g. asked_price: null), but it
+      // returns what the model tried. Recover that call instead of failing the turn; the brain cleans the arguments.
+      const recovered = recoverToolCall(err, params);
+      if (recovered) {
+        console.log(`[llm] ${purpose} ${t.model} recovered a rejected tool call (${(recovered.choices[0].message.tool_calls![0] as any).function.name})`);
+        return recovered;
+      }
       lastErr = err;
       coolDown(t, err);
       console.warn(`[llm] ${purpose} ${t.model} failed after ${Date.now() - started}ms: ${(err as Error).message.slice(0, 400)}`);
     }
   }
   throw lastErr;
+}
+
+function recoverToolCall(err: unknown, params: Params): OpenAI.Chat.Completions.ChatCompletion | null {
+  const e = err as { error?: { code?: string; failed_generation?: string }; code?: string };
+  const failed = e?.error?.failed_generation;
+  if ((e?.error?.code ?? e?.code) !== 'tool_use_failed' || !failed) return null;
+  try {
+    const raw = JSON.parse(failed);
+    const call = Array.isArray(raw) ? raw[0] : raw;
+    const name = String(call?.name ?? '');
+    const known = (params.tools ?? []).some((tl: any) => tl.function?.name === name);
+    if (!known) return null;
+    const args = Object.fromEntries(Object.entries(call.arguments ?? call.parameters ?? {}).filter(([, v]) => v !== null));
+    return {
+      id: `recovered-${Date.now()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: 'recovered',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'tool_calls',
+          logprobs: null,
+          message: {
+            role: 'assistant',
+            content: '',
+            refusal: null,
+            tool_calls: [{ id: `call_${Date.now()}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+          },
+        },
+      ],
+    } as OpenAI.Chat.Completions.ChatCompletion;
+  } catch {
+    return null;
+  }
 }
 
 /** Plain text completion for the camera/vision call. */
