@@ -7,8 +7,24 @@ const FRAME_EVERY_MS = 1500;
 const FRAME_WIDTH = 768; // enough detail to read brand names and labels
 
 export function useCamera() {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // The page can show the camera in TWO places (desktop side panel + mobile panel). Every <video>
+  // gets the stream, and frames are captured from whichever one is actually playing.
+  const videos = useRef(new Set<HTMLVideoElement>());
   const streamRef = useRef<MediaStream | null>(null);
+  const attach = (el: HTMLVideoElement) => {
+    if (streamRef.current && el.srcObject !== streamRef.current) {
+      el.srcObject = streamRef.current;
+      el.play().catch(() => {});
+    }
+  };
+  const videoRef = useCallback((el: HTMLVideoElement | null) => {
+    // Callback ref: called with the element on mount and null on unmount.
+    videos.current.forEach((v) => !v.isConnected && videos.current.delete(v));
+    if (el) {
+      videos.current.add(el);
+      attach(el);
+    }
+  }, []);
   const [on, setOn] = useState(false);
   const [facing, setFacing] = useState<'environment' | 'user'>('environment');
   const [error, setError] = useState<string | null>(null);
@@ -28,10 +44,7 @@ export function useCamera() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
+      videos.current.forEach((v) => attach(v));
       setFacing(mode);
       setOn(true);
     } catch (err) {
@@ -48,8 +61,14 @@ export function useCamera() {
 
   /** Grab the current video frame as a compressed JPEG data URL. */
   const capture = useCallback((): string | null => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return null;
+    // Prefer a video that is playing and visible; a hidden one still has frames, so it's the fallback.
+    const playing = [...videos.current].filter((v) => v.isConnected && v.videoWidth > 0);
+    const video = playing.find((v) => v.offsetParent !== null) ?? playing[0];
+    if (!video) {
+      // Stream is on but no element has it yet: attach and try again on the next tick.
+      videos.current.forEach((v) => attach(v));
+      return null;
+    }
     const scale = FRAME_WIDTH / video.videoWidth;
     const canvas = document.createElement('canvas');
     canvas.width = FRAME_WIDTH;

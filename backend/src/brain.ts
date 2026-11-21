@@ -173,7 +173,8 @@ function cleanSpoken(text: string) {
     // List items ("- Online price: 999") become spoken sentences.
     .map((line) => {
       const l = line.replace(/^\s*(?:[-•–]|\d+[.)])\s+/, '').trim();
-      return l && !/[.!?।:]$/.test(l) && l !== line.trim() ? `${l}.` : l;
+      // Every line is its own sentence ("Best Size: 32" + "Online Price: 775" must not run together).
+      return l && !/[.!?।:]$/.test(l) ? `${l}.` : l;
     })
     .join(' ')
     .replace(/\s+[-•–]\s+(?=\p{Lu})/gu, '. ') // inline bullets: "sneakers. - Fair price" → "sneakers. Fair price"
@@ -186,6 +187,8 @@ function cleanSpoken(text: string) {
     .replace(/([.!?।])(?=\S)/g, '$1 ') // "today?Just" → "today? Just"
     .replace(/\s+/g, ' ')
     .replace(/\s+([.,!?।])/g, '$1') // removing "(Amazon)" can leave "online ." → "online."
+    .replace(/\b(?:Fit|Style|Fit & Style|Fit and Style|Price|Size|Health|Quality) (?:Note|Tip|Check)s?:\s*/g, '') // "Fit & Style Note:" labels
+    .replace(/(^|[.!?]\s+)(?:[A-Z][\w&']*\s){0,2}[A-Z][\w&']*:\s+/g, '$1') // "Best Size: …", "Online Price: …" at sentence start
     .trim();
   // Split on . ! ? and the Hindi full stop । (works for every script).
   const sentences = flat.match(/[^.!?।]+[.!?।]+|[^.!?।]+$/g) ?? [flat];
@@ -414,6 +417,21 @@ export async function think(history: Msg[], onFiller?: (text: string) => void): 
           return { text: lang === 'English' ? 'Sorry, could you say that again?' : text, toShopkeeper: false };
         }
         let reply = userPart || text;
+        // Every price check must end in a clear personal call (buy / skip / bargain). If the AI only
+        // described the item, lead with the decision the verdict card shows.
+        if (used.has('inspect_product') && lang === 'English' && state.verdict?.decision?.label) {
+          const LEAD: Record<string, string> = {
+            'Buy it': 'My take: buy it.',
+            'Buy, after a little bargaining': 'My take: buy it, but bargain a little first.',
+            'Only if he drops the price': 'My take: only buy it if he drops the price.',
+            'Skip it': 'My take: skip this one.',
+            'Probably a copy': 'Careful, this looks like a copy.',
+            'Good pick for you': 'My take: this is a good pick for you.',
+          };
+          const lead = LEAD[state.verdict.decision.label];
+          const decided = /\b(buy|skip|worth|go for it|pass on|avoid|(good|great|nice|solid) (pick|choice|buy|fit)|pick for you|good deal|don'?t get|i'?d get|recommend|copy|fake)\b/i.test(reply);
+          if (lead && !decided) reply = `${lead} ${reply}`;
+        }
         // Suggest mode: if we still don't know the shop's price, always ask for it.
         if (used.has('inspect_product') && state.verdict?.asked_price == null && !reply.includes('?') && lang === 'English') {
           reply += ' How much is he asking for it?';

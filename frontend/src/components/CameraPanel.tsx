@@ -1,8 +1,8 @@
-import type { RefObject } from 'react';
+import type { RefCallback } from 'react';
 import { CloseIcon, FlipIcon, ImageIcon, ScanIcon } from '../icons';
 
 type Props = {
-  videoRef: RefObject<HTMLVideoElement | null>;
+  videoRef: RefCallback<HTMLVideoElement>;
   on: boolean;
   photo: string | null;
   error: string | null;
